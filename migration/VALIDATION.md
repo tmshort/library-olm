@@ -30,7 +30,7 @@ flag flips it to `Eligible`:
 - **V2.4 (C4)** OperatorCondition with `status.conditions` entries → Ineligible "operator-condition"; `--acknowledge-operator-condition` → Eligible.
 - **V2.5 (C5)** CSV `.clusterPermissions` granting `operators.coreos.com/subscriptions` → Ineligible "olmv0-api-access"; `--acknowledge-olmv0-api-access` → Eligible.
 - **V2.6 (C6)** OperatorGroup with `serviceAccountName` → Ineligible "scoped serviceaccount"; `--acknowledge-scoped-serviceaccount` → Eligible.
-- **V2.7 (C7)** Subscription with non-empty `spec.config` → Ineligible "subscription-config"; `--acknowledge-subscription-config` → Eligible.
+- **V2.7 (C7)** Subscription with non-empty `spec.config` on a cluster **with** `NewOLMConfigAPI` → Eligible, mapped to `deploymentConfig` (no flag needed). On a cluster **without** the feature → Ineligible "subscription-config"; `--acknowledge-subscription-config` → Eligible (migrates without the overrides).
 - **V2.8 (C8, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
 - **V2.9 (C9, hard)** CSV not `Succeeded` → Ineligible "not at steady state"; no override.
 
@@ -47,6 +47,7 @@ flag flips it to `Eligible`:
 - **V3.9** CatalogSource `registryPoll.interval` → `pollIntervalMinutes` (integer minutes); dropped when the image ref is a digest.
 - **V3.10** CatalogSource `priority` carried to ClusterCatalog `priority`.
 - **V3.11** A `configmap`/`internal`/address-only CatalogSource is reported not-migratable and skipped.
+- **V3.12** Subscription `spec.config` maps to `CE.spec.config.inline.deploymentConfig` with all sub-fields except `selector`; the operator Deployment reflects env/envFrom/resources/tolerations/nodeSelector/affinity/volumes/volumeMounts/annotations, and still does after an OLMv1-driven upgrade. A `spec.config.selector`, if present, is dropped (with a warning).
 
 ## V4. Edge-case tests (R8)
 
@@ -106,9 +107,9 @@ flag flips it to `Eligible`:
 | R2.5 CE annotations | V3.6 |
 | R2.6 Boxcutter phase 2 | Prerequisite note (PLAN) |
 | R3 C1–C9 | V2.1–V2.9 |
-| R4 Subscription fields | V3.1–V3.3, V2.7, V4.4 |
+| R4 Subscription fields | V3.1–V3.3, V3.12, V2.7, V4.4 |
 | R5 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
-| R6 ClusterExtension mapping | V3.1–V3.6 |
+| R6 ClusterExtension mapping | V3.1–V3.6, V3.12 |
 | R7 CatalogSource→ClusterCatalog | V3.8–V3.11 |
 | R8 Edge cases | V4.1–V4.7 |
 | R9 Non-goals | V6.4, V6.5 |
