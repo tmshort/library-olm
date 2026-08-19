@@ -16,27 +16,43 @@ API groups referenced:
 **R1.1 — Library API.** A Go package exposes, at minimum:
 - `ScanAll(ctx)` → all OLMv0 `Subscription`s classified into the four `OperatorStatus` states (R1.3), including a per-operator catalog-availability check.
 - `Check(ctx, opts)` → run all readiness & compatibility checks for one operator; no cluster mutations.
-- `Gather(ctx, opts)` → collect and return everything that would be migrated; no cluster mutations.
-- `Migrate(ctx, opts)` → perform the full migration (phased, with recovery).
+- `Gather(ctx, opts)` → collect and return everything that would be migrated; no cluster mutations (backs the CLI `convert --dry-run`).
+- `Migrate(ctx, opts)` → perform the full migration (phased, with recovery); backs the CLI `convert`.
 - `Rollback(ctx, opts)` → restore an operator to OLMv0 management.
 - `Cleanup(ctx, opts)` → finish a partial migration (Conflict state).
 - A separate catalog-migration API for `CatalogSource` → `ClusterCatalog`.
 
-**R1.2 — Two CLIs.** `migrate-catalogs-v0-to-v1` and `migrate-operators-v0-to-v1`, with
-the subcommands and flags described in [README.md](README.md) and R3.
+**R1.2 — CLI command surface.** Two binaries. `migrate-catalogs-v0-to-v1` (with
+`--dry-run`) migrates catalogs. `migrate-operators-v0-to-v1` follows a kubectl/`oc`-style
+verb-plus-target model: every action is a verb subcommand taking either an operator name
+**or** `--all`. Because the target is an argument, an operator named `check`/`convert`/etc.
+is never ambiguous.
+
+| Command | Target | Library call | Mutating? |
+|---|---|---|---|
+| `check <operator>` / `check --all` | Subscription(s) | `Check` / `ScanAll` | no |
+| `convert <operator>` / `convert --all` | Subscription(s) | `Migrate` (`Gather` when `--dry-run`) | yes (no when `--dry-run`) |
+| `rollback <ce-name>` / `rollback --all` | ClusterExtension(s) | `Rollback` | yes |
+| `cleanup <ce-name>` / `cleanup --all` | ClusterExtension(s) | `Cleanup` | yes |
+
+Flags: `-n/--namespace`, `--all`, `--dry-run` (on `convert`; replaces the former `gather`
+subcommand), `--continue-on-error` (on `convert --all`), the `--acknowledge-*` flags (R3),
+and `--acknowledge-installed` (on `rollback`). `check`/`convert` target a `Subscription`
+(name + namespace); `rollback`/`cleanup` target the resulting `ClusterExtension`.
 
 **R1.3 — Four-state classification.** Every `Subscription` is `Eligible`, `Ineligible`,
 `AlreadyMigrated`, or `Conflict`, each with a specific human-readable reason.
 
-**R1.4 — `migrate all` output ordering.** Sections printed in order: **Conflict**
-(warn prominently; never auto-migrate) → **Ineligible** (reason per operator) →
-**AlreadyMigrated** → **Eligible** (then migrated sequentially).
+**R1.4 — `--all` output ordering.** For `check --all` and `convert --all`, sections are
+printed in order: **Conflict** (warn prominently; never auto-migrate) → **Ineligible**
+(reason per operator) → **AlreadyMigrated** → **Eligible**. `convert --all` then migrates
+the Eligible operators sequentially.
 
-**R1.5 — Batch failure handling.** `all` stops on the first failure by default; pass
-`--continue-on-error` to log the failure and continue with the remaining operators.
+**R1.5 — Batch failure handling.** `convert --all` stops on the first failure by default;
+pass `--continue-on-error` to log the failure and continue with the remaining operators.
 
-**R1.6 — Non-interactive.** No prompts. `gather` and `--dry-run` are the preview
-mechanisms; all overrides are explicit `--acknowledge-*` flags.
+**R1.6 — Non-interactive.** No prompts. `convert --dry-run` is the preview mechanism; all
+overrides are explicit `--acknowledge-*` flags.
 
 **R1.7 — Downtime.** Close-to-zero downtime when the install namespace is unchanged (only
 the management plane changes; workloads keep running). When a namespace change is required,

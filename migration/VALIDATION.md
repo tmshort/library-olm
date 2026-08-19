@@ -10,14 +10,14 @@ with both OLMv0 and OLMv1 installed.
 
 ## V1. Per-command behavior
 
-- **V1.1** `migrate-operators-v0-to-v1 check` on a healthy AllNamespaces operator with an available catalog reports all checks green and exits 0; makes no cluster changes.
-- **V1.2** `gather` lists every resource that would be migrated (grouped by kind), including CRDs, and reports them as COS objects with `CollisionProtection: IfNoController`; makes no cluster changes.
-- **V1.3** `migrate` (single) results in a `ClusterExtension` reaching `Installed=True`; the `Subscription` and `CSV` are deleted; CRDs remain and are adopted by OLMv1; the COS reached `Succeeded=True` **before** the CE was created.
+- **V1.1** `check <operator> -n <ns>` on a healthy AllNamespaces operator with an available catalog reports all checks green and exits 0; makes no cluster changes.
+- **V1.2** `convert <operator> -n <ns> --dry-run` lists every resource that would be migrated (grouped by kind), including CRDs, and reports them as COS objects with `CollisionProtection: IfNoController`; makes no cluster changes.
+- **V1.3** `convert <operator> -n <ns>` results in a `ClusterExtension` reaching `Installed=True`; the `Subscription` and `CSV` are deleted; CRDs remain and are adopted by OLMv1; the COS reached `Succeeded=True` **before** the CE was created.
 - **V1.4** `rollback <ce-name> --acknowledge-installed` deletes the CE and COS (orphan cascade), recreates the `Subscription` from the backup annotation, and the operator returns to OLMv0 management (`AtLatestKnown`/`UpgradePending`). Without `--acknowledge-installed` on an `Installed=True` CE, rollback refuses and exits non-zero.
 - **V1.5** `cleanup <ce-name>` on a Conflict state deletes the `Subscription` and OLMv0 artifacts (Operator CR, OperatorCondition, copied CSVs, OperatorGroup if last) and leaves the CE intact.
-- **V1.6** `all` prints sections in order Conflict → Ineligible → AlreadyMigrated → Eligible; Conflicts are never auto-migrated; only Eligible operators are migrated.
-- **V1.7** `all` stops on the first failure by default; with `--continue-on-error` it logs the failure and continues, exiting non-zero if any operator failed.
-- **V1.8** No command ever blocks on interactive input.
+- **V1.6** `check --all` and `convert --all` print sections in order Conflict → Ineligible → AlreadyMigrated → Eligible; Conflicts are never auto-migrated; `convert --all` migrates only the Eligible operators.
+- **V1.7** `convert --all` stops on the first failure by default; with `--continue-on-error` it logs the failure and continues, exiting non-zero if any operator failed.
+- **V1.8** No command ever blocks on interactive input. An operator whose name collides with a verb (e.g. `check`) is migratable as a positional argument (`convert check -n <ns>`).
 
 ## V2. Eligibility matrix (one case per check, R3)
 
@@ -63,12 +63,12 @@ flag flips it to `Eligible`:
 1. Bootstrap kind with OLMv0 + OLMv1 side-by-side.
 2. Install an AllNamespaces operator via an OLMv0 Subscription; confirm healthy.
 3. `migrate-catalogs-v0-to-v1` → CatalogSource becomes a serving ClusterCatalog.
-4. `migrate-operators-v0-to-v1 check` → all green (catalog now found).
-5. `gather` → lists resources incl. CRDs (`IfNoController`).
-6. `migrate` → CE `Installed=True`; Subscription/CSV deleted; CRDs adopted.
+4. `check <operator> -n <ns>` → all green (catalog now found).
+5. `convert <operator> -n <ns> --dry-run` → lists resources incl. CRDs (`IfNoController`).
+6. `convert <operator> -n <ns>` → CE `Installed=True`; Subscription/CSV deleted; CRDs adopted.
 7. Upgrade via OLMv1 → CRDs updated through the normal bundle lifecycle.
 8. `rollback <ce-name> --acknowledge-installed` → Subscription restored, CE deleted.
-9. Fresh cluster with operators in all four states → `all` → correct four-section output; Conflicts warned and skipped.
+9. Fresh cluster with operators in all four states → `check --all` → correct four-section output; `convert --all` warns on Conflicts and migrates only Eligible.
 
 ## V6. Non-functional (Jira deployment considerations)
 
@@ -94,7 +94,7 @@ flag flips it to `Eligible`:
 | R1.1 Library API | V1.1–V1.7 (via library calls), V3.*, V4.* |
 | R1.2 Two CLIs | V1.*, V3.8–V3.11, V5 |
 | R1.3 Four-state classification | V1.6, V2.*, V5.9 |
-| R1.4 `all` ordering | V1.6 |
+| R1.4 `--all` ordering | V1.6 |
 | R1.5 Batch failure / `--continue-on-error` | V1.7 |
 | R1.6 Non-interactive | V1.8 |
 | R1.7 Downtime posture | V5.6 (namespace unchanged), V4.7 (namespace change) |

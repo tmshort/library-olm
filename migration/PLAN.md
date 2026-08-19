@@ -59,18 +59,21 @@ Verified during Phase 7 E2E.
 CE carries the matching annotation.
 
 ## Phase 4 — Migration & recovery commands
-**Goal:** The operator CLI surface (R1.1, R1.4, R1.5, R1.8).
-- `migrate` (single): profile → resolve catalog → back up Subscription spec to CE annotation
+**Goal:** The operator CLI surface (R1.1, R1.2, R1.4, R1.5, R1.8) — verb-plus-target
+(kubectl/`oc`-style); each verb takes an operator name or `--all`.
+- `check <op> | --all`: readiness + compatibility + four-state classification; `--all` scans the cluster (calls `Check`/`ScanAll`).
+- `convert <op> | --all`: profile → resolve catalog → back up Subscription spec to CE annotation
   → collect (5-source, dedup) → create COS (wait `Succeeded=True`) → create CE → cleanup.
-- `all`: four-section ordering; `--continue-on-error`.
-- `rollback <ce-name>`: require `--acknowledge-installed` when CE is `Installed=True`; delete CE
+  `--dry-run` previews via `Gather` (replaces the former `gather` subcommand). `--all` prints the
+  four-section summary, then converts each Eligible operator; `--continue-on-error` to keep going.
+- `rollback <ce-name> | --all`: require `--acknowledge-installed` when CE is `Installed=True`; delete CE
   then COS with orphan cascade (fallback: new COS revision → `Succeeded=True` → orphan delete);
   restore Subscription from the backup annotation (`startingCSV` → `installedCSV`).
-- `cleanup <ce-name>`: for `Conflict`; delete Subscription (orphan) + `CleanupOLMv0Resources`.
-- CLI files under `migration/cmd/migrate-operators-v0-to-v1/`.
+- `cleanup <ce-name> | --all`: for `Conflict`; delete Subscription (orphan) + `CleanupOLMv0Resources`.
+- CLI files under `migration/cmd/migrate-operators-v0-to-v1/` (one file per verb).
 
-**Depends on:** Phases 1–3. **Exit:** single migrate, `all`, rollback, and cleanup each pass
-their VALIDATION per-command checks on kind.
+**Depends on:** Phases 1–3. **Exit:** `check`, `convert` (single + `--all`), `rollback`, and
+`cleanup` each pass their VALIDATION per-command checks on kind.
 
 ## Phase 5 — Catalog migration CLI *(parallelizable with 2–4)*
 **Goal:** `migrate-catalogs-v0-to-v1` (R7).
