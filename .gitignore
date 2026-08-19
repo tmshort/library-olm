@@ -1,0 +1,26 @@
+# Binaries
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+migrate-operators-v0-to-v1
+migrate-catalogs-v0-to-v1
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+
+# Go workspace / vendor tooling
+go.work
+go.work.sum
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Migration artifacts produced at runtime
+olm-migration-backup-*/
