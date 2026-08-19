@@ -33,22 +33,29 @@ Migrates OLMv0 `CatalogSource` resources to OLMv1 `ClusterCatalog` resources.
 ### `migrate-operators-v0-to-v1`
 Migrates OLMv0 `Subscription`/`CSV` installations to OLMv1 `ClusterExtension`/`ClusterObjectSet`.
 
-| Subcommand | Purpose |
-|---|---|
-| `check` | Report readiness & compatibility for one operator (no changes) |
-| `gather` | Show everything that would be migrated (dry-run for one operator) |
-| *(default)* | Migrate a single named operator |
-| `all` | Scan the cluster, classify every operator, migrate all Eligible ones |
-| `rollback <ce-name>` | Restore an operator to OLMv0 management |
-| `cleanup <ce-name>` | Finish a partial migration (Conflict state) |
+Every action is a verb subcommand that takes either an operator name **or** `--all`
+(kubectl/`oc`-style). Because the target is an argument, an operator literally named
+`check` or `convert` is unambiguous (`convert check`).
 
-The tool is **non-interactive**: there are no prompts. `gather` / `--dry-run` are the
-preview mechanisms, and every risk override is an explicit `--acknowledge-*` flag (see
+| Command | Target | Purpose |
+|---|---|---|
+| `check <operator> \| --all` | Subscription(s) | Report readiness, compatibility, and four-state classification (no changes). `--all` scans the whole cluster. |
+| `convert <operator> \| --all` | Subscription(s) | Perform the migration. `--dry-run` previews without changing the cluster. `--all` prints the four-section summary and converts every Eligible operator. |
+| `rollback <ce-name> \| --all` | ClusterExtension(s) | Restore an operator to OLMv0 management. |
+| `cleanup <ce-name> \| --all` | ClusterExtension(s) | Finish a partial migration (Conflict state). |
+
+Common flags: `-n/--namespace` (Subscription namespace), `--all`, `--dry-run` (on
+`convert`), `--continue-on-error` (on `convert --all`), and the `--acknowledge-*` override
+flags. Note the target differs by phase: `check`/`convert` act on a `Subscription`
+(name + `-n` namespace); `rollback`/`cleanup` act on the resulting `ClusterExtension`.
+
+The tool is **non-interactive**: there are no prompts. `convert --dry-run` is the preview
+mechanism, and every risk override is an explicit `--acknowledge-*` flag (see
 [REQUIREMENTS.md](REQUIREMENTS.md) §R3).
 
 ## Operator states
 
-`migrate-operators-v0-to-v1 all` classifies every OLMv0 `Subscription` into one of four states:
+`migrate-operators-v0-to-v1 check --all` classifies every OLMv0 `Subscription` into one of four states (and `convert --all` prints the same summary before migrating the Eligible ones):
 
 | State | Meaning | Action |
 |---|---|---|
@@ -63,9 +70,9 @@ preview mechanisms, and every risk override is an explicit `--acknowledge-*` fla
 migrate-catalogs-v0-to-v1        (prerequisite: CatalogSource -> ClusterCatalog)
         │
         ▼
-scan ──► check ──► gather ──► migrate ──────────────────────────────► cleanup
- (all)   (compat)  (preview)   │                                        (delete Sub/CSV,
-                               │                                         OperatorGroup if last)
+check ──────────────► convert ─────────────────────────────────────► cleanup
+ (classify / compat;   │  (--dry-run to preview)                        (delete Sub/CSV,
+  --all to scan)       │                                                 OperatorGroup if last)
                                ├─ profile Subscription/CSV/InstallPlan
                                ├─ resolve target ClusterCatalog (by image)
                                ├─ back up Subscription spec (CE annotation)
