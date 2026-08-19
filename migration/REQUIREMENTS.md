@@ -111,7 +111,7 @@ environment gates at the bottom, which are **hard** (must be remediated first).
 | C4 | No active OperatorCondition | `OperatorCondition.status.conditions` has entries (see R8) | `--acknowledge-operator-condition` |
 | C5 | No OLMv0-API RBAC | CSV `.permissions`/`.clusterPermissions` grant access to `operators.coreos.com` `subscriptions`/`installplans`/`clusterserviceversions`/`catalogsources` (**excluding** `operatorconditions`) | `--acknowledge-olmv0-api-access` |
 | C6 | No scoped ServiceAccount | OperatorGroup `spec.serviceAccountName` is set | `--acknowledge-scoped-serviceaccount` |
-| C7 | No SubscriptionConfig overrides | Subscription `spec.config` is non-empty (pod overrides don't survive OLMv1 upgrades) | `--acknowledge-subscription-config` |
+| C7 | SubscriptionConfig representable | Subscription `spec.config` is non-empty **and** the target cluster lacks the `NewOLMConfigAPI` (DeploymentConfig) feature — otherwise it maps cleanly to `deploymentConfig` (R4/R6) and is **not** a block | `--acknowledge-subscription-config` (migrate without the pod overrides) |
 | C8 | Catalog availability *(hard)* | Package not served by any `ClusterCatalog` | none — run `migrate-catalogs-v0-to-v1` first |
 | C9 | Steady state *(hard)* | CSV not `Succeeded`, or Subscription state not `AtLatestKnown`/`UpgradePending` | none — operator must be healthy first |
 
@@ -130,7 +130,7 @@ off the JSON names shown. `spec` is a pointer and required.
 | `spec.channel` | `Channel` | → `CE.spec.source.catalog.channels` (single-element) when set; omitted when empty. |
 | `spec.startingCSV` | `StartingCSV` | Not carried to the CE. Preserved in the backup; on `rollback`, reset to `status.installedCSV`. |
 | `spec.installPlanApproval` | `InstallPlanApproval` | `Manual` → pin `CE.spec.source.catalog.version` to the installed version (preserve manual upgrade control). `Automatic` (or empty, which defaults to `Automatic`) → leave version unset for channel-based auto-upgrade. |
-| `spec.config` | `Config` (`SubscriptionConfig`) | Pod/container overrides — `selector`, `nodeSelector`, `tolerations`, `resources`, `envFrom`, `env`, `volumes`, `volumeMounts`, `affinity`, `annotations`. The live Deployment already reflects them and is collected into the COS, so the **initial** migration preserves behavior — but OLMv1 has **no** SubscriptionConfig equivalent, so a later OLMv1 upgrade re-renders the bundle and **drops** these overrides. Non-empty `spec.config` ⇒ `Ineligible` (C7); `--acknowledge-subscription-config` overrides with that warning. Each of the ten sub-fields carries the same caveat. |
+| `spec.config` | `Config` (`SubscriptionConfig`) | **Maps directly** to `CE.spec.config.inline.deploymentConfig`. OLMv1's `DeploymentConfig` is a Go **type alias** of `SubscriptionConfig` (`internal/operator-controller/config/config.go`), and the registry+v1 renderer applies it to the operator Deployment on **every** render — installs *and* upgrades — so overrides persist. Sub-fields map 1:1 — `env`, `envFrom`, `volumes`, `volumeMounts`, `tolerations`, `resources`, `nodeSelector`, `affinity`, `annotations` — **except `selector`**, which OLMv1 omits (never honored in v0; drop it, harmless). Feature-gated by `NewOLMConfigAPI`: if the target cluster lacks the feature, the overrides can't be applied → `Ineligible` (C7), overridable with `--acknowledge-subscription-config` (migrate without them). |
 | `status.installedCSV` | — | **Primary input.** The migration operates on the CSV actually installed. |
 | `status.currentCSV` | — | May differ from `installedCSV` during `UpgradePending` (manual approval). Acceptable; ignore it and operate on `installedCSV`. |
 | `status.state` | — | Readiness gate (C9): must be `AtLatestKnown` or `UpgradePending`. |
@@ -173,7 +173,8 @@ Subscription + OperatorGroup inputs above.
 | `spec.source.catalog.selector` | resolved `ClusterCatalog` | `matchLabels: {olm.operatorframework.io/metadata.name: <catalog>}` — pins to the catalog resolved from the CatalogSource image (ties to R7). |
 | `spec.source.catalog.upgradeConstraintPolicy` | default `CatalogProvided` | OperatorGroup `TechPreviewUnsafeFailForward` has no exact equivalent; `SelfCertified` is the closest permissive analogue but is **not** applied automatically. |
 | `spec.install.preflight.crdUpgradeSafety` | not mapped | No OLMv0 equivalent; leave default (`Strict`). |
-| `spec.config` | not mapped from SubscriptionConfig | CE `spec.config` is bundle-schema (Inline) config — unrelated to OLMv0 pod-override `SubscriptionConfig` (R4). |
+| `spec.config.inline.deploymentConfig` | Subscription `spec.config` (`SubscriptionConfig`) | 1:1 — `DeploymentConfig` is a type alias of `SubscriptionConfig`; all sub-fields except `selector` (R4). Applied to the operator Deployment on every render. Requires the `NewOLMConfigAPI` feature on the target cluster. |
+| `spec.config.inline.watchNamespace` | *(future)* | OLMv1's inline config also carries `watchNamespace`, the emerging mechanism for Own/Single-namespace watch scope. Not populated by the initial migration (watch scope is handled per C1/R5), but a candidate mapping once that feature stabilizes — potentially relaxing C1. |
 
 ---
 
