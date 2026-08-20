@@ -86,7 +86,8 @@ Verified during Phase 8 E2E.
 - Collector places all objects (incl. CRDs) into the COS with `IfNoController`.
 
 **Note:** Once [OPRUN-4723](https://redhat.atlassian.net/browse/OPRUN-4723) (Phase 7) merges,
-update C3 from a hard block to a soft block (`--acknowledge-api-services`).
+**remove C3 entirely** — OLMv1 will manage APIService objects natively so operators with
+APIService definitions become Eligible with no flag required.
 
 **Depends on:** Phases 1, 2. **Exit:** each soft check flips Ineligible→Eligible when its
 flag is set; CE carries the matching annotation.
@@ -97,7 +98,9 @@ flag is set; CE carries the matching annotation.
 - `check <op> | --all`: readiness + compatibility + four-state classification; `--all` scans the cluster (calls `Check`/`ScanAll`).
 - `convert <op> | --all`: profile → resolve catalog → back up Subscription and OperatorGroup
   specs to CE annotations (R2.5) → optional `--backup <directory>` (R2.6) → collect
-  (5-source, dedup) → create COS (wait `Succeeded=True`) → create CE → cleanup.
+  (primary: `Operator` CR `status.components.refs`; supplementary: `olm.owner` label query,
+  ownerRef query, InstallPlan steps; dedup by GVK+ns+name — see R4a) → create COS (wait
+  `Succeeded=True`) → create CE → cleanup.
   `--dry-run` previews via `Gather`. `--all` prints the four-section summary, then converts
   each Eligible operator; `--continue-on-error` to keep going.
 - `rollback <ce-name> | --all`: require `--acknowledge-installed` when CE is `Installed=True`; delete CE
@@ -146,11 +149,13 @@ migrated at all (C3 hard block).
 - Add a `BundleCSVAPIServiceGenerator` to `ResourceGenerators` that reads
   `csv.spec.apiservicedefinitions.owned` and emits the corresponding `APIService` objects.
 - Update the `BundleValidator` if APIService-specific validation rules are needed.
-- Once merged, update the migration tool's C3 check (Phase 3 / OPRUN-4719) from a **hard
-  block** to a **soft block** (overridable with `--acknowledge-api-services`).
+- Once merged, **remove C3 entirely** from the migration tool (Phase 3 / OPRUN-4719) — OLMv1
+  manages APIService objects natively; operators with APIService definitions become Eligible
+  with no override flag needed.
 
 **Depends on:** nothing (can start immediately, runs in parallel). **Exit:** registry+v1
-renderer generates `APIService` objects; migration tool C3 updated to soft block.
+renderer generates `APIService` objects; C3 removed from migration tool (Phase 3 / OPRUN-4719
+updated).
 
 ## Phase 8 — Testing — *(testing stories auto-created per epic)*
 **Goal:** Confidence across unit and E2E (R-wide).
