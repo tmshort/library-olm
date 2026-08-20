@@ -37,12 +37,17 @@ is never ambiguous.
 
 Flags: `-n/--namespace`, `--all`, `--dry-run` (on `convert`), `--backup <directory>` (on
 `convert`; writes OLM-related objects to disk before deletions — see R2.6),
-`--continue-on-error` (on `convert --all`), `--acknowledge-installed` (on `rollback`), and
-the eligibility-override flags (R3): `--acknowledge-watch-scope-change`,
-`--acknowledge-operator-condition`, `--acknowledge-olmv0-api-access`,
-`--acknowledge-scoped-serviceaccount`, `--acknowledge-not-steady-state`.
-`check`/`convert` target a `Subscription` (name + `-n` namespace);
-`rollback`/`cleanup` target the resulting `ClusterExtension`.
+`--delete-operatorgroup` (on `convert`; deletes the OperatorGroup when no Subscriptions
+remain — both conditions required), `--continue-on-error` (on `convert --all`),
+`--acknowledge-installed` (on `rollback`), and the eligibility-override flags (R3):
+`--acknowledge-watch-scope-change`, `--acknowledge-operator-condition`,
+`--acknowledge-olmv0-api-access`, `--acknowledge-scoped-serviceaccount`,
+`--acknowledge-not-steady-state`. `check`/`convert` target a `Subscription` (name + `-n`
+namespace); `rollback`/`cleanup` target the resulting `ClusterExtension`.
+
+For `migrate-catalogs-v0-to-v1`: `--delete-catalogsource` deletes the source `CatalogSource`
+after creating the `ClusterCatalog`, but only when no `Subscription` references it — both
+conditions required. Default: leave the `CatalogSource` in place.
 
 **R1.3 — Four-state classification.** Every `Subscription` is `Eligible`, `Ineligible`,
 `AlreadyMigrated`, or `Conflict`, each with a specific human-readable reason.
@@ -194,11 +199,11 @@ cleaned up separately.
 | `spec.targetNamespaces` | If set → not AllNamespaces (Single/Multi) → C1 watch-scope block. When set, `selector` is ignored. |
 | `spec.selector` | If set/non-empty → selector-based targeting → C1 watch-scope block. Empty/nil `selector` **and** empty `targetNamespaces` ⇒ AllNamespaces (eligible). |
 | `spec.serviceAccountName` | Scoped install SA → C6. OLMv1 runs via operator-controller's cluster-admin SA; a scoped SA cannot be represented. Override `--acknowledge-scoped-serviceaccount` (operator will run with OLMv1's privileges). There is **no** CE target field for this — CE `spec.serviceAccount` is deprecated and ignored (see R7). |
-| `spec.upgradeStrategy` | `Default` → fine. `TechPreviewUnsafeFailForward` → no OLMv1 equivalent; informational warning, ignored (OLMv1 has its own upgrade-constraint model). |
+| `spec.upgradeStrategy` | `Default` → fine. `TechPreviewUnsafeFailForward` → not mapped and not equivalent to `SelfCertified`; informational warning only, ignored. |
 | `spec.staticProvidedAPIs` | No OLMv1 equivalent (OLMv1 does not use the `olm.providedAPIs` annotation). Ignored (note only). |
 | `status.namespaces` | Read to compute the effective install mode (AllNamespaces vs Own/Single). |
 | `status.serviceAccountRef`, `status.conditions`, `status.lastUpdated` | Controller-managed; not migrated. |
-| Cleanup | Delete the OperatorGroup **only if no other `Subscription`s remain** in the namespace. First strip `olm.owner` / `olm.owner.namespace` / `olm.owner.kind` / `olm.managed` labels from the OperatorGroup aggregation ClusterRoles (`olm.og.<name>.<view\|admin\|edit>-<hash>`) so RBAC is retained without OLMv0 ownership. |
+| Cleanup | OperatorGroup deletion requires **both** `--delete-operatorgroup` **and** no other `Subscription`s remaining in the namespace. If either condition is not met, the OperatorGroup is left in place. When deleted: first strip `olm.owner` / `olm.owner.namespace` / `olm.owner.kind` / `olm.managed` labels from the OperatorGroup aggregation ClusterRoles (`olm.og.<name>.<view\|admin\|edit>-<hash>`) so RBAC is retained without OLMv0 ownership. |
 
 ---
 
@@ -218,17 +223,18 @@ Subscription + OperatorGroup inputs above.
 | `spec.source.catalog.channels` | Subscription `spec.channel` | Single-element list if set. If empty, resolve the package's `defaultChannel` from the `ClusterCatalog` content and set it explicitly (see R4 channel row). |
 | `spec.source.catalog.version` | installed CSV version — only if `installPlanApproval == Manual` | Pin for manual control; unset for Automatic. |
 | `spec.source.catalog.selector` | resolved `ClusterCatalog` | `matchLabels: {olm.operatorframework.io/metadata.name: <catalog>}` — pins to the catalog resolved from the CatalogSource image (ties to R8). |
-| `spec.source.catalog.upgradeConstraintPolicy` | default `CatalogProvided` | OperatorGroup `TechPreviewUnsafeFailForward` has no exact equivalent; `SelfCertified` is the closest permissive analogue but is **not** applied automatically. |
+| `spec.source.catalog.upgradeConstraintPolicy` | always `CatalogProvided` | Hardcoded to `CatalogProvided` (or left unset to pick up the OLMv1 default). OperatorGroup `TechPreviewUnsafeFailForward` is not mapped — it is a different concept from `SelfCertified` and has no equivalent. |
 | `spec.install.preflight.crdUpgradeSafety` | not mapped | No OLMv0 equivalent; leave default (`Strict`). |
 | `spec.config.inline.deploymentConfig` | Subscription `spec.config` (`SubscriptionConfig`) | 1:1 — `DeploymentConfig` is a type alias of `SubscriptionConfig`; all sub-fields except `selector` (R4). Applied to the operator Deployment on every render. Requires the `NewOLMConfigAPI` feature on the target cluster. |
-| `spec.config.inline.watchNamespace` | *(future)* | OLMv1's inline config also carries `watchNamespace`, the emerging mechanism for Own/Single-namespace watch scope. Not populated by the initial migration (watch scope is handled per C1/R6), but a candidate mapping once that feature stabilizes — potentially relaxing C1. |
 
 ---
 
 ## R8. CatalogSource → ClusterCatalog mapping (`migrate-catalogs-v0-to-v1`)
 
 Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `CatalogSource`
-(`operators.coreos.com/v1alpha1`).
+(`operators.coreos.com/v1alpha1`). The `CatalogSource` is **left in place** by default —
+it is deleted only when `--delete-catalogsource` is passed **and** no remaining `Subscription`
+references it. Both conditions must be met.
 
 | CatalogSource field | ClusterCatalog target | Notes |
 |---|---|---|
@@ -247,7 +253,7 @@ Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `Cata
 
 ## R9. Edge cases
 
-- **Multiple operators in one namespace** → OperatorGroup cleanup skipped while other Subscriptions remain (R6).
+- **Multiple operators in one namespace** → OperatorGroup deletion requires `--delete-operatorgroup` AND no Subscriptions remaining; in a multi-operator namespace the second condition won't be met until all operators are migrated (R6).
 - **Multiple operators sharing a cluster resource** (e.g. the same CRD across Own/Single installs) → `CollisionProtection: IfNoController` allows adoption without conflict.
 - **Operator not at steady state** → C9 hard block.
 - **Dependency relationships** → an operator that depends on others is blocked by C2; migrating an operator that *others depend on* proceeds but must warn about dependents.
