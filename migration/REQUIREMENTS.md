@@ -231,10 +231,26 @@ Subscription + OperatorGroup inputs above.
 
 ## R8. CatalogSource → ClusterCatalog mapping (`migrate-catalogs-v0-to-v1`)
 
-Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `CatalogSource`
-(`operators.coreos.com/v1alpha1`). The `CatalogSource` is **left in place** by default —
-it is deleted only when `--delete-catalogsource` is passed **and** no remaining `Subscription`
-references it. Both conditions must be met.
+For each eligible `CatalogSource` (`operators.coreos.com/v1alpha1`), the tool first checks
+whether a suitable `ClusterCatalog` already exists by matching on `spec.source.image.ref`.
+This handles the common case where Red Hat's default catalogs (e.g. `redhat-operators`,
+`certified-operators`, `community-operators`) are already present as ClusterCatalogs.
+
+**ClusterCatalog resolution order for a given CatalogSource:**
+1. **Existing ClusterCatalog, image matches** (by name or by image scan) → adopt it; report as already covered.
+2. **No match** → create a new ClusterCatalog (per the naming strategy below) and wait for `Serving=True`.
+
+**Migration annotation:** When a ClusterCatalog is first created or first adopted by this
+tool, set `olm.operatorframework.io/migrated-from-catalogsource: <namespace>/<name>` where
+`<namespace>/<name>` is the CatalogSource being processed. The annotation is written **once
+and never overwritten** — if it is already present (e.g. because a different CatalogSource
+from another namespace already triggered adoption), leave it unchanged. This ensures the
+annotation is idempotent even when multiple CatalogSources in different namespaces map to
+the same ClusterCatalog.
+
+The `CatalogSource` is **left in place** by default — it is deleted only when
+`--delete-catalogsource` is passed **and** no remaining `Subscription` references it.
+Both conditions must be met.
 
 | CatalogSource field | ClusterCatalog target | Notes |
 |---|---|---|
