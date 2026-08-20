@@ -165,7 +165,7 @@ updated).
 - E2E on kind (OLMv0 + OLMv1): all four states, each acknowledgment override, rollback, cleanup,
   catalog migration, and the COS-adoption prerequisite.
 
-**Depends on:** Phases 2–5 (Phase 6 tests gated on that phase). **Exit:** unit coverage target met;
+**Depends on:** Phases 1–5 (via Phase 4; Phase 6 tests gated on that phase). **Exit:** unit coverage target met;
 E2E scenarios in VALIDATION pass in CI.
 
 ---
