@@ -7,6 +7,29 @@ at [REQUIREMENTS.md](REQUIREMENTS.md); validation references at [VALIDATION.md](
 Base for the port: [perdasilva/operator-controller `migration`](https://github.com/perdasilva/operator-controller/tree/migration)
 (`internal/operator-controller/migration/` + `hack/tools/migrate/`).
 
+### CLI as prototype / library exercise
+
+The CLIs in this repo (`migrate-operators-v0-to-v1`, `migrate-catalogs-v0-to-v1`) are
+**example consumers of the library**, not production delivery artifacts. Their purpose is to
+exercise and test the library API during the prototype phase; binary packaging and production
+delivery are deferred to the downstream TP ([OCPSTRAT-2692](https://redhat.atlassian.net/browse/OCPSTRAT-2692)).
+
+To make this intent obvious in the repo layout, CLIs live under **`migration/examples/cmd/`**
+rather than `migration/cmd/`:
+
+```
+migration/
+  pkg/migration/           ← the library (canonical; the real deliverable)
+  pkg/catalogmigration/    ← catalog migration library
+  examples/
+    cmd/
+      migrate-operators-v0-to-v1/   ← example CLI exercising pkg/migration
+      migrate-catalogs-v0-to-v1/    ← example CLI exercising pkg/catalogmigration
+```
+
+Downstream consumers (e.g., an `oc` plugin or the Console) will import `pkg/migration`
+directly and build their own CLI surface.
+
 ## Prerequisite (cross-repo, runs in parallel)
 
 **Verify COS adoption end-to-end in `operator-controller`.** No controller changes are
@@ -24,7 +47,7 @@ Verified during Phase 7 E2E.
 **Goal:** Stand up the `v0` module and port the prototype onto OLMv1's current APIs.
 - Module `github.com/operator-framework/library-olm` (`v0.x`); GitHub Actions (build, test,
   golangci-lint, go-apidiff); prow config (tide, lgtm/approve, hold) mirroring operator-controller.
-- Port to `migration/pkg/migration/` and `migration/cmd/migrate-operators-v0-to-v1/`.
+- Port to `migration/pkg/migration/` and `migration/examples/cmd/migrate-operators-v0-to-v1/`.
 - Rename `ClusterExtensionRevision*` → `ClusterObjectSet*` (`clusterobjectset.go` apply-config,
   `ClusterObjectSetTypeSucceeded`) (R2.2).
 - Replace inline COS objects with boxcutter **SecretPacker**; set `CollisionProtection: IfNoController` (R2.4).
@@ -40,7 +63,9 @@ Verified during Phase 7 E2E.
 - `scan.go` `ScanAllSubscriptions`: detect `Conflict` (Sub + annotated CE) and
   `AlreadyMigrated` (no Sub + annotated CE); call catalog resolution per operator.
 - `migration.go`: set the `olm.operatorframework.io/migrated-from-subscription: <ns>/<name>`
-  CE annotation (replacing the prototype's `migrated-from-v0: "true"`).
+  annotation on **both** the COS and the CE (replacing the prototype's `migrated-from-v0: "true"`).
+  Setting it on the COS makes migrated revisions discoverable by cluster admins independently of
+  the CE, and provides provenance even if the CE annotation is lost.
 
 **Depends on:** Phase 1. **Exit:** unit tests classify one fixture operator into each state.
 
@@ -70,14 +95,14 @@ CE carries the matching annotation.
   then COS with orphan cascade (fallback: new COS revision → `Succeeded=True` → orphan delete);
   restore Subscription from the backup annotation (`startingCSV` → `installedCSV`).
 - `cleanup <ce-name> | --all`: for `Conflict`; delete Subscription (orphan) + `CleanupOLMv0Resources`.
-- CLI files under `migration/cmd/migrate-operators-v0-to-v1/` (one file per verb).
+- CLI files under `migration/examples/cmd/migrate-operators-v0-to-v1/` (one file per verb).
 
 **Depends on:** Phases 1–3. **Exit:** `check`, `convert` (single + `--all`), `rollback`, and
 `cleanup` each pass their VALIDATION per-command checks on kind.
 
 ## Phase 5 — Catalog migration CLI *(parallelizable with 2–4)*
 **Goal:** `migrate-catalogs-v0-to-v1` (R7).
-- `migration/pkg/catalogmigration/` + `migration/cmd/migrate-catalogs-v0-to-v1/`.
+- `migration/pkg/catalogmigration/` + `migration/examples/cmd/migrate-catalogs-v0-to-v1/`.
 - List CatalogSources; skip already-migrated (matching image); create `ClusterCatalog` from
   the image and wait `Serving=True`; report per source; `--dry-run`.
 - Report non-image sources (configmap/internal/address) as not migratable.
