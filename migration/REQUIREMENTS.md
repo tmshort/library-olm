@@ -36,9 +36,10 @@ is never ambiguous.
 | `cleanup <ce-name>` / `cleanup --all` | ClusterExtension(s) | `Cleanup` | yes |
 
 Flags: `-n/--namespace`, `--all`, `--dry-run` (on `convert`; replaces the former `gather`
-subcommand), `--continue-on-error` (on `convert --all`), the `--acknowledge-*` flags (R3),
-and `--acknowledge-installed` (on `rollback`). `check`/`convert` target a `Subscription`
-(name + namespace); `rollback`/`cleanup` target the resulting `ClusterExtension`.
+subcommand), `--backup <directory>` (on `convert`; writes OLM-related objects to disk before
+deletions — see R2.5a), `--continue-on-error` (on `convert --all`), the `--acknowledge-*`
+flags (R3), and `--acknowledge-installed` (on `rollback`). `check`/`convert` target a
+`Subscription` (name + namespace); `rollback`/`cleanup` target the resulting `ClusterExtension`.
 
 **R1.3 — Four-state classification.** Every `Subscription` is `Eligible`, `Ineligible`,
 `AlreadyMigrated`, or `Conflict`, each with a specific human-readable reason.
@@ -59,8 +60,9 @@ the management plane changes; workloads keep running). When a namespace change i
 downtime is unavoidable but must be minimized.
 
 **R1.8 — Recovery.** Every mutating phase has a recovery path. Deletions use orphan
-cascading to preserve operator workloads. The original `Subscription` spec is backed up
-(R2.4) so `rollback` can restore it.
+cascading to preserve operator workloads. The `Subscription` and `OperatorGroup` specs are
+backed up as CE annotations (R2.5) so `rollback` is self-contained. A `--backup <directory>`
+flag (R2.5a) saves all OLM-related objects to disk for auditing and manual recovery.
 
 ---
 
@@ -88,8 +90,17 @@ controller.
 
 **R2.5 — CE annotations.** The created `ClusterExtension` carries:
 - `olm.operatorframework.io/migrated-from-subscription: <ns>/<name>` — provenance and the key for `AlreadyMigrated`/`Conflict` detection.
-- `olm.operatorframework.io/migration-subscription-backup: <json>` — the original `Subscription` spec (package, channel, source, sourceNamespace, installPlanApproval, startingCSV), so `rollback` is self-contained and machine-independent. The `Subscription` itself is not used for backup since it is deleted.
+- `olm.operatorframework.io/migration-subscription-backup: <json>` — the original `Subscription` spec (package, channel, source, sourceNamespace, installPlanApproval, startingCSV), so `rollback` is self-contained and machine-independent. The `Subscription` is deleted during migration, so it cannot be used as the backup.
+- `olm.operatorframework.io/migration-operatorgroup-backup: <json>` — the original `OperatorGroup` spec (selector, targetNamespaces, serviceAccountName, upgradeStrategy) from the Subscription's namespace, so `rollback` can also restore the OperatorGroup if needed.
 - `olm.operatorframework.io/acknowledged-<flag>: "true"` — one per acknowledgment flag used at migration time, for audit.
+
+**R2.5a — `--backup <directory>` flag.** On `convert`, optionally write all OLM-related objects for the operator to YAML files under the specified directory before any deletions occur. Files written:
+- `subscription.yaml` — full `Subscription` object
+- `operatorgroup.yaml` — full `OperatorGroup` object from the Subscription's namespace
+- `clusterserviceversion.yaml` — the installed `ClusterServiceVersion`
+- `installplans/` — one YAML per `InstallPlan` associated with the installed CSV
+
+The directory is created if it does not exist. Backup does not gate migration — it is informational and aids manual recovery if the CE annotation backup is insufficient. If the directory write fails, `convert` warns and continues (the CE annotation backup is the authoritative recovery path).
 
 **R2.6 — Boxcutter phase 2.** Upcoming boxcutter changes may introduce a
 `ClusterObjectDeployment` resource. The implementation must track this and be prepared to
