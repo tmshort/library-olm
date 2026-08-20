@@ -241,7 +241,7 @@ references it. Both conditions must be met.
 | `spec.sourceType` | `spec.source.type` | Only `grpc` **with** `spec.image` maps to OLMv1 `Image`. `configmap` / `internal` / address-only sources have **no** OLMv1 equivalent → report as **not migratable** and skip. |
 | `spec.image` | `spec.source.image.ref` | Required for `Image` type. |
 | `spec.updateStrategy.registryPoll.interval` | `spec.source.image.pollIntervalMinutes` | Duration string (default 15m) → integer minutes. **Forbidden with digest-based refs** → drop the poll if the ref is a digest. |
-| `spec.priority` (`int`) | `spec.priority` (`int32`) | Direct. |
+| `spec.priority` (`int`) | `spec.priority` (`int32`) | Validate that the value fits in `int32` range (−2,147,483,648 to 2,147,483,647) before casting. If it does not fit, report an error and mark the CatalogSource as not migratable. In practice OLMv0 documentation describes the range as positive-to-negative int32, but Go's `int` is 64-bit on 64-bit platforms so out-of-range values are theoretically possible. |
 | `spec.secrets` | — | No equivalent (OLMv1 uses the cluster global pull secret). Note if present. |
 | `spec.grpcPodConfig.*` | — | No equivalent (catalogd manages the serving pod). Note if present. |
 | `spec.displayName` / `description` / `publisher` / `icon` | — | Metadata; dropped. |
