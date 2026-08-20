@@ -60,7 +60,7 @@ Verified during Phase 8 E2E.
 `go test ./...` pass; CI green on the skeleton.
 
 ## Phase 2 — Scan & classification — [OPRUN-4718](https://redhat.atlassian.net/browse/OPRUN-4718)
-**Goal:** Four-state classification with catalog availability at scan time (R1.3, R4, C8).
+**Goal:** Four-state classification with catalog availability at scan time (R1.3, R4, C7).
 - `types.go`: `OperatorStatus` enum (`Eligible`/`Ineligible`/`AlreadyMigrated`/`Conflict`),
   replacing `OperatorScanResult.Eligible bool`.
 - `scan.go` `ScanAllSubscriptions`: detect `Conflict` (Sub + annotated CE) and
@@ -74,7 +74,7 @@ Verified during Phase 8 E2E.
 
 ## Phase 3 — Compatibility checks & acknowledgment framework — [OPRUN-4719](https://redhat.atlassian.net/browse/OPRUN-4719)
 **Goal:** All eligibility rules (R3) and the override mechanism (R2.5).
-- `compatibility.go`: implement C1, C4, C5, C6, C9 as overridable (soft) checks; C2 and C3
+- `compatibility.go`: implement C1, C4, C5, C6, C8 as overridable (soft) checks; C2 and C3
   as hard (non-overridable) blocks. Add `checkNoOLMv0APIAccess` (C5, inspecting all installed
   RBAC, **excluding** `operatorconditions`, flagging only if OLMv0 API access exists without
   OLMv1 RBAC). Keep the OperatorCondition-**status** check (C4, R8).
