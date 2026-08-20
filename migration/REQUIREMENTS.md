@@ -2,7 +2,7 @@
 
 Synthesized from the "OLMv0 to OLMv1 Migration" RFC,
 [OCPSTRAT-2693](https://redhat.atlassian.net/browse/OCPSTRAT-2693), and design review.
-Requirements are labeled `R1`–`R9`; [VALIDATION.md](VALIDATION.md) traces each to a
+Requirements are labeled `R1`–`R10`; [VALIDATION.md](VALIDATION.md) traces each to a
 verifiable check.
 
 API groups referenced:
@@ -123,8 +123,8 @@ annotation, R2.5) or **hard** (must be remediated first — no override).
 |---|---|---|---|
 | C1 | AllNamespaces watch scope | OperatorGroup targets specific namespaces (Own/Single/Multi) | `--acknowledge-watch-scope-change` |
 | C2 | No dependency resolution *(hard)* | CSV declares `olm.package.required` or `olm.gvk.required` | none — OLMv1 fundamentally does not resolve dependencies; migrating without them would leave the operator broken |
-| C3 | No APIService definitions *(hard)* | CSV `spec.apiservicedefinitions.owned` is non-empty | none — OLMv1's registry+v1 renderer has **no** `apiregistration.k8s.io` generator (verified: `ResourceGenerators` list contains no APIService generator); adding renderer support is tracked separately |
-| C4 | No active OperatorCondition | `OperatorCondition.status.conditions` has entries (see R8) | `--acknowledge-operator-condition` |
+| C3 | No APIService definitions *(hard, temporary)* | CSV `spec.apiservicedefinitions.owned` is non-empty | none — OLMv1's registry+v1 renderer currently has **no** `apiregistration.k8s.io` generator; when [OPRUN-4723](https://redhat.atlassian.net/browse/OPRUN-4723) merges, OLMv1 will manage APIService objects natively and **C3 is removed entirely** (no override flag; operators with APIService definitions become Eligible) |
+| C4 | No active OperatorCondition | `OperatorCondition.status.conditions` has entries (see R9) | `--acknowledge-operator-condition` |
 | C5 | OLMv0-API RBAC without OLMv1 RBAC | The installed RBAC (from live cluster, sourced from bundle manifests or CSV) grants access to `operators.coreos.com` resources (`subscriptions`/`installplans`/`clusterserviceversions`/`catalogsources`, **excluding** `operatorconditions`) **and** does not also grant equivalent OLMv1 API access — operators updated for OLMv1 compatibility will carry both and pass | `--acknowledge-olmv0-api-access` |
 | C6 | No scoped ServiceAccount | OperatorGroup `spec.serviceAccountName` is set | `--acknowledge-scoped-serviceaccount` |
 | C8 | Catalog availability *(hard)* | Package not served by any `ClusterCatalog` | none — run `migrate-catalogs-v0-to-v1` first |
@@ -133,7 +133,7 @@ annotation, R2.5) or **hard** (must be remediated first — no override).
 **C7 removed:** `SubscriptionConfig` representability is no longer a check. The `DeploymentConfig`
 feature gate will be promoted at the same time as the Boxcutter feature gate, so all target
 clusters that support migration will support `deploymentConfig`. `spec.config` maps cleanly
-to `CE.spec.config.inline.deploymentConfig` (R4/R6) without a gate check.
+to `CE.spec.config.inline.deploymentConfig` (R4/R7) without a gate check.
 
 ---
 
@@ -154,19 +154,50 @@ off the JSON names shown. `spec` is a pointer and required.
 | `status.installedCSV` | — | **Primary input.** The migration operates on the CSV actually installed. |
 | `status.currentCSV` | — | May differ from `installedCSV` during `UpgradePending` (manual approval). Acceptable; ignore it and operate on `installedCSV`. |
 | `status.state` | — | Readiness gate (C9): must be `AtLatestKnown` or `UpgradePending`. |
-| `status.installPlanRef` | — | Locate the `InstallPlan` for resource collection. `status.install` is the deprecated equivalent — fall back to it if the ref is absent. |
+| `status.installPlanRef` | — | Used as a **supplementary** source for resource collection (see R5). Not the primary source; see note below. `status.install` is the deprecated equivalent — fall back if the ref is absent. |
 | `status.installPlanGeneration`, `status.catalogHealth`, `status.conditions`, `status.reason`, `status.lastUpdated` | — | Controller-managed; read-only signals, not migrated as user intent. |
-| annotation `olm.generated-by` | — | If present, the Subscription was generated as a **dependency** of another operator → readiness flags it (dependency operators are out of scope, R9). |
+| annotation `olm.generated-by` | — | If present, the Subscription was generated as a **dependency** of another operator → readiness flags it (dependency operators are out of scope, R10). |
+
+### R5. Resource collection strategy
+
+The migration tool must collect all resources that belong to the operator's installation so
+they can be placed into the `ClusterObjectSet` for OLMv1 to manage. No single OLMv0
+mechanism is complete; the strategy combines multiple sources and deduplicates by
+GVK+namespace+name.
+
+**Primary source — `Operator` CR `status.components.refs`:** The `Operator` CR
+(`operators.coreos.com/v1`, named `<package>.<namespace>`) is maintained by OLMv0 via
+label-based selection on `operators.coreos.com/<package>.<namespace>`. It represents the
+**live cluster state** of everything OLMv0 currently associates with the operator, including
+resources created or managed dynamically by the CSV controller after initial install. This is
+more comprehensive than the InstallPlan (which is an install-time plan only) and should be
+treated as the primary source of truth.
+
+**Supplementary sources** (add anything not already in the Operator CR refs):
+1. **`olm.owner` label query** — list all resources of the eligible kinds matching
+   `olm.owner=<csv-name>` across the cluster; catches resources the Operator CR may have
+   missed if the label propagation lagged.
+2. **OwnerReference query** — in the Subscription namespace, list namespace-scoped resources
+   with an ownerReference pointing to the CSV; catches resources (e.g., ServiceAccounts) that
+   may lack the `olm.owner` label.
+3. **InstallPlan steps** — parse the InstallPlan's `status.plan[]` steps where `resolving`
+   matches the CSV name, and fetch each live object. The InstallPlan does **not** cover
+   resources managed by the CSV controller after install, so it is a fallback supplement
+   rather than a primary source.
+
+**Excluded from collection:** `ClusterServiceVersion`, `Subscription`, `InstallPlan`,
+`Operator`, `OperatorGroup`, `OperatorCondition` — these are OLMv0 management resources
+cleaned up separately.
 
 ---
 
-## R5. OperatorGroup field handling (`operators.coreos.com/v1`)
+## R6. OperatorGroup field handling (`operators.coreos.com/v1`)
 
 | Field | Handling |
 |---|---|
 | `spec.targetNamespaces` | If set → not AllNamespaces (Single/Multi) → C1 watch-scope block. When set, `selector` is ignored. |
 | `spec.selector` | If set/non-empty → selector-based targeting → C1 watch-scope block. Empty/nil `selector` **and** empty `targetNamespaces` ⇒ AllNamespaces (eligible). |
-| `spec.serviceAccountName` | Scoped install SA → C6. OLMv1 runs via operator-controller's cluster-admin SA; a scoped SA cannot be represented. Override `--acknowledge-scoped-serviceaccount` (operator will run with OLMv1's privileges). There is **no** CE target field for this — CE `spec.serviceAccount` is deprecated and ignored (see R6). |
+| `spec.serviceAccountName` | Scoped install SA → C6. OLMv1 runs via operator-controller's cluster-admin SA; a scoped SA cannot be represented. Override `--acknowledge-scoped-serviceaccount` (operator will run with OLMv1's privileges). There is **no** CE target field for this — CE `spec.serviceAccount` is deprecated and ignored (see R7). |
 | `spec.upgradeStrategy` | `Default` → fine. `TechPreviewUnsafeFailForward` → no OLMv1 equivalent; informational warning, ignored (OLMv1 has its own upgrade-constraint model). |
 | `spec.staticProvidedAPIs` | No OLMv1 equivalent (OLMv1 does not use the `olm.providedAPIs` annotation). Ignored (note only). |
 | `status.namespaces` | Read to compute the effective install mode (AllNamespaces vs Own/Single). |
@@ -175,7 +206,7 @@ off the JSON names shown. `spec` is a pointer and required.
 
 ---
 
-## R6. ClusterExtension result — how each CE spec field is populated
+## R7. ClusterExtension result — how each CE spec field is populated
 
 The migration produces one `ClusterExtension` (`olm.operatorframework.io/v1`) from the
 Subscription + OperatorGroup inputs above.
@@ -190,15 +221,15 @@ Subscription + OperatorGroup inputs above.
 | `spec.source.catalog.packageName` | Subscription `spec.name` | Required, immutable. |
 | `spec.source.catalog.channels` | Subscription `spec.channel` | Single-element list if set. If empty, resolve the package's `defaultChannel` from the `ClusterCatalog` content and set it explicitly (see R4 channel row). |
 | `spec.source.catalog.version` | installed CSV version — only if `installPlanApproval == Manual` | Pin for manual control; unset for Automatic. |
-| `spec.source.catalog.selector` | resolved `ClusterCatalog` | `matchLabels: {olm.operatorframework.io/metadata.name: <catalog>}` — pins to the catalog resolved from the CatalogSource image (ties to R7). |
+| `spec.source.catalog.selector` | resolved `ClusterCatalog` | `matchLabels: {olm.operatorframework.io/metadata.name: <catalog>}` — pins to the catalog resolved from the CatalogSource image (ties to R8). |
 | `spec.source.catalog.upgradeConstraintPolicy` | default `CatalogProvided` | OperatorGroup `TechPreviewUnsafeFailForward` has no exact equivalent; `SelfCertified` is the closest permissive analogue but is **not** applied automatically. |
 | `spec.install.preflight.crdUpgradeSafety` | not mapped | No OLMv0 equivalent; leave default (`Strict`). |
 | `spec.config.inline.deploymentConfig` | Subscription `spec.config` (`SubscriptionConfig`) | 1:1 — `DeploymentConfig` is a type alias of `SubscriptionConfig`; all sub-fields except `selector` (R4). Applied to the operator Deployment on every render. Requires the `NewOLMConfigAPI` feature on the target cluster. |
-| `spec.config.inline.watchNamespace` | *(future)* | OLMv1's inline config also carries `watchNamespace`, the emerging mechanism for Own/Single-namespace watch scope. Not populated by the initial migration (watch scope is handled per C1/R5), but a candidate mapping once that feature stabilizes — potentially relaxing C1. |
+| `spec.config.inline.watchNamespace` | *(future)* | OLMv1's inline config also carries `watchNamespace`, the emerging mechanism for Own/Single-namespace watch scope. Not populated by the initial migration (watch scope is handled per C1/R6), but a candidate mapping once that feature stabilizes — potentially relaxing C1. |
 
 ---
 
-## R7. CatalogSource → ClusterCatalog mapping (`migrate-catalogs-v0-to-v1`)
+## R8. CatalogSource → ClusterCatalog mapping (`migrate-catalogs-v0-to-v1`)
 
 Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `CatalogSource`
 (`operators.coreos.com/v1alpha1`).
@@ -214,13 +245,13 @@ Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `Cata
 | `spec.displayName` / `description` / `publisher` / `icon` | — | Metadata; dropped. |
 | `spec.configMap`, `spec.address` | — | Non-image sources; not migratable (see `sourceType`). |
 | *(n/a)* | `spec.availabilityMode` | OLMv1-only; default `Available`. |
-| `metadata.name` | `metadata.name` | Reuse the CatalogSource name; becomes the `olm.operatorframework.io/metadata.name` value that the CE selector (R6) pins to. |
+| `metadata.name` | `metadata.name` | Reuse the CatalogSource name; becomes the `olm.operatorframework.io/metadata.name` value that the CE selector (R7) pins to. |
 
 ---
 
-## R8. Edge cases
+## R9. Edge cases
 
-- **Multiple operators in one namespace** → OperatorGroup cleanup skipped while other Subscriptions remain (R5).
+- **Multiple operators in one namespace** → OperatorGroup cleanup skipped while other Subscriptions remain (R6).
 - **Multiple operators sharing a cluster resource** (e.g. the same CRD across Own/Single installs) → `CollisionProtection: IfNoController` allows adoption without conflict.
 - **Operator not at steady state** → C9 hard block.
 - **Dependency relationships** → an operator that depends on others is blocked by C2; migrating an operator that *others depend on* proceeds but must warn about dependents.
@@ -232,10 +263,9 @@ Produces one `ClusterCatalog` (`olm.operatorframework.io/v1`) per eligible `Cata
 
 ---
 
-## R9. Non-goals / out of scope
+## R10. Non-goals / out of scope
 
 - Dependency resolution (operators declaring `olm.package.required` / `olm.gvk.required`).
-- Operators with APIService definitions.
 - Operators relying on scoped service accounts (without explicit acknowledgment).
 - OwnNamespace / SingleNamespace as a *permanent* mode (migration converts to AllNamespaces).
 - Hosted Control Planes — OLMv1 is not supported on HCP yet; the design must not foreclose it (e.g. don't hardcode a single kubeconfig).
