@@ -35,11 +35,14 @@ is never ambiguous.
 | `rollback <ce-name>` / `rollback --all` | ClusterExtension(s) | `Rollback` | yes |
 | `cleanup <ce-name>` / `cleanup --all` | ClusterExtension(s) | `Cleanup` | yes |
 
-Flags: `-n/--namespace`, `--all`, `--dry-run` (on `convert`; replaces the former `gather`
-subcommand), `--backup <directory>` (on `convert`; writes OLM-related objects to disk before
-deletions — see R2.5a), `--continue-on-error` (on `convert --all`), the `--acknowledge-*`
-flags (R3), and `--acknowledge-installed` (on `rollback`). `check`/`convert` target a
-`Subscription` (name + namespace); `rollback`/`cleanup` target the resulting `ClusterExtension`.
+Flags: `-n/--namespace`, `--all`, `--dry-run` (on `convert`), `--backup <directory>` (on
+`convert`; writes OLM-related objects to disk before deletions — see R2.6),
+`--continue-on-error` (on `convert --all`), `--acknowledge-installed` (on `rollback`), and
+the eligibility-override flags (R3): `--acknowledge-watch-scope-change`,
+`--acknowledge-operator-condition`, `--acknowledge-olmv0-api-access`,
+`--acknowledge-scoped-serviceaccount`, `--acknowledge-not-steady-state`.
+`check`/`convert` target a `Subscription` (name + `-n` namespace);
+`rollback`/`cleanup` target the resulting `ClusterExtension`.
 
 **R1.3 — Four-state classification.** Every `Subscription` is `Eligible`, `Ineligible`,
 `AlreadyMigrated`, or `Conflict`, each with a specific human-readable reason.
@@ -113,21 +116,24 @@ adapt which OLMv1 objects it creates.
 
 ## R3. Eligibility & compatibility rules
 
-Each check yields `Eligible` or `Ineligible`. All blocks are **soft** (overridable by an
-explicit `--acknowledge-*` flag that records a CE annotation, R2.5) except the two
-environment gates at the bottom, which are **hard** (must be remediated first).
+Blocks are **soft** (overridable by an explicit `--acknowledge-*` flag that records a CE
+annotation, R2.5) or **hard** (must be remediated first — no override).
 
 | # | Check | Ineligible when… | Override flag |
 |---|---|---|---|
 | C1 | AllNamespaces watch scope | OperatorGroup targets specific namespaces (Own/Single/Multi) | `--acknowledge-watch-scope-change` |
-| C2 | No dependency resolution | CSV declares `olm.package.required` or `olm.gvk.required` | `--acknowledge-dependencies` |
-| C3 | No APIService definitions | CSV `spec.apiservicedefinitions.owned` is non-empty | `--acknowledge-api-services` |
+| C2 | No dependency resolution *(hard)* | CSV declares `olm.package.required` or `olm.gvk.required` | none — OLMv1 fundamentally does not resolve dependencies; migrating without them would leave the operator broken |
+| C3 | No APIService definitions *(hard)* | CSV `spec.apiservicedefinitions.owned` is non-empty | none — OLMv1's registry+v1 renderer has **no** `apiregistration.k8s.io` generator (verified: `ResourceGenerators` list contains no APIService generator); adding renderer support is tracked separately |
 | C4 | No active OperatorCondition | `OperatorCondition.status.conditions` has entries (see R8) | `--acknowledge-operator-condition` |
-| C5 | No OLMv0-API RBAC | CSV `.permissions`/`.clusterPermissions` grant access to `operators.coreos.com` `subscriptions`/`installplans`/`clusterserviceversions`/`catalogsources` (**excluding** `operatorconditions`) | `--acknowledge-olmv0-api-access` |
+| C5 | OLMv0-API RBAC without OLMv1 RBAC | The installed RBAC (from live cluster, sourced from bundle manifests or CSV) grants access to `operators.coreos.com` resources (`subscriptions`/`installplans`/`clusterserviceversions`/`catalogsources`, **excluding** `operatorconditions`) **and** does not also grant equivalent OLMv1 API access — operators updated for OLMv1 compatibility will carry both and pass | `--acknowledge-olmv0-api-access` |
 | C6 | No scoped ServiceAccount | OperatorGroup `spec.serviceAccountName` is set | `--acknowledge-scoped-serviceaccount` |
-| C7 | SubscriptionConfig representable | Subscription `spec.config` is non-empty **and** the target cluster lacks the `NewOLMConfigAPI` (DeploymentConfig) feature — otherwise it maps cleanly to `deploymentConfig` (R4/R6) and is **not** a block | `--acknowledge-subscription-config` (migrate without the pod overrides) |
 | C8 | Catalog availability *(hard)* | Package not served by any `ClusterCatalog` | none — run `migrate-catalogs-v0-to-v1` first |
-| C9 | Steady state *(hard)* | CSV not `Succeeded`, or Subscription state not `AtLatestKnown`/`UpgradePending` | none — operator must be healthy first |
+| C9 | Steady state | CSV not `Succeeded`, or Subscription state not `AtLatestKnown`/`UpgradePending` | `--acknowledge-not-steady-state` |
+
+**C7 removed:** `SubscriptionConfig` representability is no longer a check. The `DeploymentConfig`
+feature gate will be promoted at the same time as the Boxcutter feature gate, so all target
+clusters that support migration will support `deploymentConfig`. `spec.config` maps cleanly
+to `CE.spec.config.inline.deploymentConfig` (R4/R6) without a gate check.
 
 ---
 
@@ -141,7 +147,7 @@ off the JSON names shown. `spec` is a pointer and required.
 | `spec.source` | `CatalogSource` | Locate the `CatalogSource` (with `sourceNamespace`) to obtain its image; used to resolve the target `ClusterCatalog`. Not copied to the CE directly. |
 | `spec.sourceNamespace` | `CatalogSourceNamespace` | Namespace of the `CatalogSource`; used with `source`. |
 | `spec.name` | `Package` | → `CE.spec.source.catalog.packageName`. Also forms the `migrated-from-subscription` annotation and the `Operator` CR name `<package>.<ns>`. |
-| `spec.channel` | `Channel` | → `CE.spec.source.catalog.channels` (single-element) when set; omitted when empty. |
+| `spec.channel` | `Channel` | When set: → `CE.spec.source.catalog.channels` (single-element list). When **empty**: OLMv0 resolves via the catalog's `defaultChannel` — a concept OLMv1 does not carry forward. OLMv1 with no `channels` considers upgrade edges across *all* channels, which may differ from OLMv0's default. Mitigation: query the resolved `ClusterCatalog` for the package's declared default channel and set it explicitly on the CE. Warn the admin if the default channel cannot be determined. |
 | `spec.startingCSV` | `StartingCSV` | Not carried to the CE. Preserved in the backup; on `rollback`, reset to `status.installedCSV`. |
 | `spec.installPlanApproval` | `InstallPlanApproval` | `Manual` → pin `CE.spec.source.catalog.version` to the installed version (preserve manual upgrade control). `Automatic` (or empty, which defaults to `Automatic`) → leave version unset for channel-based auto-upgrade. |
 | `spec.config` | `Config` (`SubscriptionConfig`) | **Maps directly** to `CE.spec.config.inline.deploymentConfig`. OLMv1's `DeploymentConfig` is a Go **type alias** of `SubscriptionConfig` (`internal/operator-controller/config/config.go`), and the registry+v1 renderer applies it to the operator Deployment on **every** render — installs *and* upgrades — so overrides persist. Sub-fields map 1:1 — `env`, `envFrom`, `volumes`, `volumeMounts`, `tolerations`, `resources`, `nodeSelector`, `affinity`, `annotations` — **except `selector`**, which OLMv1 omits (never honored in v0; drop it, harmless). Feature-gated by `NewOLMConfigAPI`: if the target cluster lacks the feature, the overrides can't be applied → `Ineligible` (C7), overridable with `--acknowledge-subscription-config` (migrate without them). |
@@ -182,7 +188,7 @@ Subscription + OperatorGroup inputs above.
 | `spec.serviceAccount` | **do not set** | Deprecated and **ignored** in current OLMv1 (operator-controller uses its own cluster-admin SA). The RFC/prototype `<ce>-installer` SA concept is obsolete — do not create or set it. |
 | `spec.source.sourceType` | constant `Catalog` | Only implemented source type. |
 | `spec.source.catalog.packageName` | Subscription `spec.name` | Required, immutable. |
-| `spec.source.catalog.channels` | Subscription `spec.channel` | Single-element list if set; else omitted. |
+| `spec.source.catalog.channels` | Subscription `spec.channel` | Single-element list if set. If empty, resolve the package's `defaultChannel` from the `ClusterCatalog` content and set it explicitly (see R4 channel row). |
 | `spec.source.catalog.version` | installed CSV version — only if `installPlanApproval == Manual` | Pin for manual control; unset for Automatic. |
 | `spec.source.catalog.selector` | resolved `ClusterCatalog` | `matchLabels: {olm.operatorframework.io/metadata.name: <catalog>}` — pins to the catalog resolved from the CatalogSource image (ties to R7). |
 | `spec.source.catalog.upgradeConstraintPolicy` | default `CatalogProvided` | OperatorGroup `TechPreviewUnsafeFailForward` has no exact equivalent; `SelfCertified` is the closest permissive analogue but is **not** applied automatically. |

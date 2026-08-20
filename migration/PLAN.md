@@ -74,9 +74,10 @@ Verified during Phase 7 E2E.
 - `compatibility.go`: implement C1–C7 as overridable checks; add `checkNoOLMv0APIAccess`
   (C5, **excluding** `operatorconditions`) and keep the OperatorCondition-**status** check (C4, R8).
 - `types.go`: `Options` gains one `bool` per flag — `AcknowledgeWatchScopeChange`,
-  `AcknowledgeDependencies`, `AcknowledgeAPIServices`, `AcknowledgeOperatorCondition`,
-  `AcknowledgeOLMv0APIAccess`, `AcknowledgeScopedServiceAccount`, `AcknowledgeSubscriptionConfig`,
-  `AcknowledgeNamespaceDelete`, `AcknowledgeInstalled` — plus `ContinueOnError`.
+  `AcknowledgeOperatorCondition`, `AcknowledgeOLMv0APIAccess`, `AcknowledgeScopedServiceAccount`,
+  `AcknowledgeNotSteadyState`, `AcknowledgeNamespaceDelete`, `AcknowledgeInstalled` — plus
+  `ContinueOnError`. (`AcknowledgeDependencies`, `AcknowledgeAPIServices`, and
+  `AcknowledgeSubscriptionConfig` removed: C2 and C3 are now hard blocks; C7 is removed.)
 - On use, record `olm.operatorframework.io/acknowledged-<flag>: "true"` on the CE.
 - Collector places all objects (incl. CRDs) into the COS with `IfNoController`.
 
