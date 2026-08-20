@@ -247,7 +247,7 @@ references it. Both conditions must be met.
 | `spec.displayName` / `description` / `publisher` / `icon` | — | Metadata; dropped. |
 | `spec.configMap`, `spec.address` | — | Non-image sources; not migratable (see `sourceType`). |
 | *(n/a)* | `spec.availabilityMode` | OLMv1-only; default `Available`. |
-| `metadata.name` | `metadata.name` | Reuse the CatalogSource name; becomes the `olm.operatorframework.io/metadata.name` value that the CE selector (R7) pins to. |
+| `metadata.name` | `metadata.name` (with deduplication — see below) | CatalogSource is namespace-scoped; ClusterCatalog is cluster-scoped. Naming strategy: (1) **Same name, same image across namespaces** → consolidate into a single ClusterCatalog using that name (they serve identical content; all Subscriptions referencing any of those CatalogSources will resolve to the same ClusterCatalog). (2) **Same name, different image across namespaces** → cannot consolidate; use `<name>-<namespace>` for each conflicting CatalogSource to avoid collision. (3) **Unique name** → use `metadata.name` directly. The tool must scan all CatalogSources across all namespaces before creating any ClusterCatalogs to determine which strategy applies to each name. The resulting ClusterCatalog name becomes the `olm.operatorframework.io/metadata.name` value the CE selector (R7) pins to. |
 
 ---
 
