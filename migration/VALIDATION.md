@@ -25,14 +25,15 @@ For each, a fixture operator produces the expected state + reason, and setting t
 flag flips it to `Eligible`:
 
 - **V2.1 (C1)** OperatorGroup with `targetNamespaces` → Ineligible "watch scope"; `--acknowledge-watch-scope-change` → Eligible (migrates to AllNamespaces).
-- **V2.2 (C2)** CSV with `olm.package.required` → Ineligible "dependencies"; `--acknowledge-dependencies` → Eligible.
-- **V2.3 (C3)** CSV with owned APIServices → Ineligible "apiservices"; `--acknowledge-api-services` → Eligible.
+- **V2.2 (C2, hard)** CSV with `olm.package.required` → Ineligible "dependencies"; no override.
+- **V2.3 (C3, hard, temporary)** CSV with owned APIServices → Ineligible "apiservices"; no override. Removed entirely when OPRUN-4723 merges.
 - **V2.4 (C4)** OperatorCondition with `status.conditions` entries → Ineligible "operator-condition"; `--acknowledge-operator-condition` → Eligible.
 - **V2.5 (C5)** CSV `.clusterPermissions` granting `operators.coreos.com/subscriptions` → Ineligible "olmv0-api-access"; `--acknowledge-olmv0-api-access` → Eligible.
 - **V2.6 (C6)** OperatorGroup with `serviceAccountName` → Ineligible "scoped serviceaccount"; `--acknowledge-scoped-serviceaccount` → Eligible.
 - **V2.7 (C7)** Subscription with non-empty `spec.config` on a cluster **with** `NewOLMConfigAPI` → Eligible, mapped to `deploymentConfig` (no flag needed). On a cluster **without** the feature → Ineligible "subscription-config"; `--acknowledge-subscription-config` → Eligible (migrates without the overrides).
 - **V2.8 (C8, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
-- **V2.9 (C9, hard)** CSV not `Succeeded` → Ineligible "not at steady state"; no override.
+- **V2.9 (C9)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
+- **V2.10 (C10, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
 
 ## V3. Field-mapping assertions (R4/R5/R6/R7)
 
@@ -42,12 +43,15 @@ flag flips it to `Eligible`:
 - **V3.4** `CE.spec.source.catalog.selector` pins to the resolved catalog via `olm.operatorframework.io/metadata.name`.
 - **V3.5** `CE.spec.serviceAccount` is never set (deprecated/ignored), even when the OperatorGroup had a `serviceAccountName`.
 - **V3.6** CE carries `migrated-from-subscription`, `migration-subscription-backup`, and one `acknowledged-<flag>` annotation per flag used.
-- **V3.7** OperatorGroup deleted only when no other Subscriptions remain; aggregation ClusterRoles retained with `olm.*` labels stripped.
-- **V3.8** CatalogSource `spec.image` → `ClusterCatalog.spec.source.image.ref`; ClusterCatalog `metadata.name` equals the CatalogSource name.
+- **V3.7** OperatorGroup deleted only when both `--delete-operatorgroup` is passed AND no other Subscriptions remain in the namespace; left in place otherwise.
+- **V3.8** CatalogSource `spec.image` → `ClusterCatalog.spec.source.image.ref`; ClusterCatalog `metadata.name` follows the deduplication strategy (V3.13/V3.14).
 - **V3.9** CatalogSource `registryPoll.interval` → `pollIntervalMinutes` (integer minutes); dropped when the image ref is a digest.
 - **V3.10** CatalogSource `priority` carried to ClusterCatalog `priority`.
 - **V3.11** A `configmap`/`internal`/address-only CatalogSource is reported not-migratable and skipped.
 - **V3.12** Subscription `spec.config` maps to `CE.spec.config.inline.deploymentConfig` with all sub-fields except `selector`; the operator Deployment reflects env/envFrom/resources/tolerations/nodeSelector/affinity/volumes/volumeMounts/annotations, and still does after an OLMv1-driven upgrade. A `spec.config.selector`, if present, is dropped (with a warning).
+- **V3.13** Two CatalogSources in different namespaces share a name **and** the same image → `migrate-catalogs-v0-to-v1` creates a single `ClusterCatalog` using that name; both Subscriptions' CE selectors resolve to the same ClusterCatalog.
+- **V3.14** Two CatalogSources in different namespaces share a name **but** have different images → `migrate-catalogs-v0-to-v1` creates two ClusterCatalogs named `<name>-<namespace-A>` and `<name>-<namespace-B>`; each Subscription's CE selector resolves to the correct ClusterCatalog by image match.
+- **V3.15** CatalogSource `spec.priority` value outside `int32` range (> 2,147,483,647 or < −2,147,483,648) → reported as not migratable; migration skipped for that CatalogSource.
 
 ## V4. Edge-case tests (R8)
 
@@ -106,10 +110,11 @@ flag flips it to `Eligible`:
 | R2.4 SecretPacker + IfNoController | V1.2, V4.2, V4.6 |
 | R2.5 CE annotations | V3.6 |
 | R2.6 Boxcutter phase 2 | Prerequisite note (PLAN) |
-| R3 C1–C9 | V2.1–V2.9 |
+| R3 C1–C10 | V2.1–V2.10 |
 | R4 Subscription fields | V3.1–V3.3, V3.12, V2.7, V4.4 |
-| R5 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
-| R6 ClusterExtension mapping | V3.1–V3.6, V3.12 |
-| R7 CatalogSource→ClusterCatalog | V3.8–V3.11 |
-| R8 Edge cases | V4.1–V4.7 |
-| R9 Non-goals | V6.4, V6.5 |
+| R5 Resource collection strategy | V1.3, V4.2, V4.6 |
+| R6 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
+| R7 ClusterExtension mapping | V3.1–V3.6, V3.12 |
+| R8 CatalogSource→ClusterCatalog | V3.8–V3.11, V3.13, V3.14, V3.15 |
+| R9 Edge cases | V4.1–V4.7 |
+| R10 Non-goals | V6.4, V6.5 |
