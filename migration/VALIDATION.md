@@ -42,7 +42,7 @@ flag flips it to `Eligible`:
 - **V3.3** Subscription `spec.channel` → single-element `CE.spec.source.catalog.channels`; empty channel → omitted.
 - **V3.4** `CE.spec.source.catalog.selector` pins to the resolved catalog via `olm.operatorframework.io/metadata.name`.
 - **V3.5** `CE.spec.serviceAccount` is never set (deprecated/ignored), even when the OperatorGroup had a `serviceAccountName`.
-- **V3.6** CE carries `migrated-from-subscription`, `migration-subscription-backup`, and one `acknowledged-<flag>` annotation per flag used.
+- **V3.6** CE carries `migrated-from-subscription`, `migration-subscription-backup`, `migration-operatorgroup-backup`, and one `acknowledged-<flag>` annotation per flag used.
 - **V3.7** OperatorGroup deleted only when both `--delete-operatorgroup` is passed AND no other Subscriptions remain in the namespace; left in place otherwise.
 - **V3.8** CatalogSource `spec.image` → `ClusterCatalog.spec.source.image.ref`; ClusterCatalog `metadata.name` follows the deduplication strategy (V3.13/V3.14).
 - **V3.9** CatalogSource `registryPoll.interval` → `pollIntervalMinutes` (integer minutes); dropped when the image ref is a digest.
@@ -69,15 +69,15 @@ flag flips it to `Eligible`:
 
 ## V5. End-to-end scenario (kind)
 
-1. Bootstrap kind with OLMv0 + OLMv1 side-by-side.
-2. Install an AllNamespaces operator via an OLMv0 Subscription; confirm healthy.
-3. `migrate-catalogs-v0-to-v1` → CatalogSource becomes a serving ClusterCatalog.
-4. `check <operator> -n <ns>` → all green (catalog now found).
-5. `convert <operator> -n <ns> --dry-run` → lists resources incl. CRDs (`IfNoController`).
-6. `convert <operator> -n <ns>` → CE `Installed=True`; Subscription/CSV deleted; CRDs adopted.
-7. Upgrade via OLMv1 → CRDs updated through the normal bundle lifecycle.
-8. `rollback <ce-name> --acknowledge-installed` → Subscription restored, CE deleted.
-9. Fresh cluster with operators in all four states → `check --all` → correct four-section output; `convert --all` warns on Conflicts and migrates only Eligible.
+- **V5.1** Bootstrap kind with OLMv0 + OLMv1 side-by-side.
+- **V5.2** Install an AllNamespaces operator via an OLMv0 Subscription; confirm healthy.
+- **V5.3** `migrate-catalogs-v0-to-v1` → CatalogSource becomes a serving ClusterCatalog.
+- **V5.4** `check <operator> -n <ns>` → all green (catalog now found).
+- **V5.5** `convert <operator> -n <ns> --dry-run` → lists resources incl. CRDs (`IfNoController`).
+- **V5.6** `convert <operator> -n <ns>` → CE `Installed=True`; Subscription/CSV deleted; CRDs adopted (demonstrates close-to-zero downtime with namespace unchanged).
+- **V5.7** Upgrade via OLMv1 → CRDs updated through the normal bundle lifecycle.
+- **V5.8** `rollback <ce-name> --acknowledge-installed` → Subscription restored, CE deleted.
+- **V5.9** Fresh cluster with operators in all four states → `check --all` → correct four-section output; `convert --all` warns on Conflicts and migrates only Eligible.
 
 ## V6. Non-functional (Jira deployment considerations)
 
