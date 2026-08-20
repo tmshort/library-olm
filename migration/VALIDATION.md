@@ -26,13 +26,14 @@ flag flips it to `Eligible`:
 
 - **V2.1 (C1)** OperatorGroup with `targetNamespaces` → Ineligible "watch scope"; `--acknowledge-watch-scope-change` → Eligible (migrates to AllNamespaces).
 - **V2.2 (C2, hard)** CSV with `olm.package.required` → Ineligible "dependencies"; no override.
-- **V2.3 (C3, hard, temporary)** CSV with owned APIServices → Ineligible "apiservices"; no override. Removed entirely when OPRUN-4723 merges.
-- **V2.4 (C4)** OperatorCondition with `status.conditions` entries → Ineligible "operator-condition"; `--acknowledge-operator-condition` → Eligible.
-- **V2.5 (C5)** CSV `.clusterPermissions` granting `operators.coreos.com/subscriptions` → Ineligible "olmv0-api-access"; `--acknowledge-olmv0-api-access` → Eligible.
-- **V2.6 (C6)** OperatorGroup with `serviceAccountName` → Ineligible "scoped serviceaccount"; `--acknowledge-scoped-serviceaccount` → Eligible.
-- **V2.7 (C7, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
-- **V2.8 (C8)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
-- **V2.9 (C9, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
+- **V2.3 (C2, hard)** CSV with `olm.gvk.required` → Ineligible "dependencies"; no override.
+- **V2.4 (C3, hard, temporary)** CSV with owned APIServices → Ineligible "apiservices"; no override. Removed entirely when OPRUN-4723 merges.
+- **V2.5 (C4)** OperatorCondition with `status.conditions` entries → Ineligible "operator-condition"; `--acknowledge-operator-condition` → Eligible.
+- **V2.6 (C5)** CSV `.clusterPermissions` granting `operators.coreos.com/subscriptions` → Ineligible "olmv0-api-access"; `--acknowledge-olmv0-api-access` → Eligible.
+- **V2.7 (C6)** OperatorGroup with `serviceAccountName` → Ineligible "scoped serviceaccount"; `--acknowledge-scoped-serviceaccount` → Eligible.
+- **V2.8 (C7, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
+- **V2.9 (C8)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
+- **V2.10 (C9, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
 
 ## V3. Field-mapping assertions (R4/R6/R7/R8)
 
@@ -53,6 +54,8 @@ flag flips it to `Eligible`:
 - **V3.15** CatalogSource `spec.priority` value outside `int32` range → reported as not migratable and skipped by default; with `--acknowledge-priority-overflow` the value is capped at `math.MaxInt32` / `math.MinInt32` and migration proceeds.
 - **V3.16** A pre-existing `ClusterCatalog` whose `spec.source.image.ref` matches the CatalogSource image is adopted (not duplicated); `migrate-catalogs-v0-to-v1` reports it as already covered and sets `olm.operatorframework.io/migrated-from-catalogsource: <namespace>/<name>` on the ClusterCatalog if the annotation is not already present. Running `migrate-catalogs-v0-to-v1` against the Red Hat default catalogs (which already exist as ClusterCatalogs) produces no new ClusterCatalogs and leaves the existing annotations unchanged.
 - **V3.17** Two CatalogSources from different namespaces both map to the same ClusterCatalog (same image) → the `migrated-from-catalogsource` annotation is set exactly once by whichever CatalogSource is processed first; subsequent processing of the other CatalogSource leaves the annotation unchanged.
+- **V3.18 (R2.6)** `convert <operator> -n <ns> --backup <directory>` writes four files before any deletions: `subscription.yaml`, `operatorgroup.yaml`, `clusterserviceversion.yaml`, and `installplans/` (one YAML per InstallPlan); directory is created if it does not exist; migration proceeds if directory write fails (backup is informational only).
+- **V3.19 (R1.2)** `migrate-catalogs-v0-to-v1 --delete-catalogsource` deletes the CatalogSource only when both conditions are met: the flag is passed **and** no Subscription references it; when one or both conditions are not met, the CatalogSource is left in place.
 
 ## V4. Edge-case tests (R9)
 
@@ -98,8 +101,8 @@ flag flips it to `Eligible`:
 | Requirement | Validated by |
 |---|---|
 | R1.1 Library API | V1.1–V1.7 (via library calls), V3.*, V4.* |
-| R1.2 Two CLIs | V1.*, V3.8–V3.11, V3.13–V3.17, V5 |
-| R1.3 Four-state classification | V1.6, V2.1–V2.9, V5 |
+| R1.2 Two CLIs | V1.*, V3.8–V3.11, V3.13–V3.19, V5 |
+| R1.3 Four-state classification | V1.6, V2.1–V2.10, V5 |
 | R1.4 `--all` ordering | V1.6 |
 | R1.5 Batch failure / `--continue-on-error` | V1.7 |
 | R1.6 Non-interactive | V1.8 |
@@ -110,12 +113,13 @@ flag flips it to `Eligible`:
 | R2.3 Wait for COS Succeeded; no status writes | V1.3 |
 | R2.4 SecretPacker + IfNoController | V1.2, V4.2, V4.6 |
 | R2.5 CE annotations | V3.6 |
+| R2.6 `--backup <directory>` flag | V3.18 |
 | R2.7 Boxcutter phase 2 | Prerequisite note (PLAN) |
-| R3 C1–C9 | V2.1–V2.9 |
+| R3 C1–C9 | V2.1–V2.10 |
 | R4 Subscription fields | V3.1–V3.3, V3.12, V4.4 |
 | R5 Resource collection strategy | V1.3, V4.2, V4.6 |
-| R6 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
+| R6 OperatorGroup fields | V2.1, V2.7, V3.5, V3.7 |
 | R7 ClusterExtension mapping | V3.1–V3.6, V3.12 |
-| R8 CatalogSource→ClusterCatalog | V3.8–V3.11, V3.13–V3.17 |
+| R8 CatalogSource→ClusterCatalog | V3.8–V3.11, V3.13–V3.17, V3.19 |
 | R9 Edge cases | V4.1–V4.7 |
 | R10 Non-goals | V6.4, V6.5 |
