@@ -8,7 +8,7 @@ rollback at every step.
 > Status: upstream **prototype** for
 > [OCPSTRAT-2693](https://redhat.atlassian.net/browse/OCPSTRAT-2693). The library is
 > versioned `v0` — breaking API changes are expected. Binary packaging, Console UI, and
-> Hosted Control Planes are out of scope (see [REQUIREMENTS.md](REQUIREMENTS.md) §R9).
+> Hosted Control Planes are out of scope (see [REQUIREMENTS.md](REQUIREMENTS.md) §R10).
 
 ## Why
 
@@ -75,7 +75,7 @@ check ──────────────► convert ──────�
   --all to scan)       │                                                 OperatorGroup if last)
                                ├─ profile Subscription/CSV/InstallPlan
                                ├─ resolve target ClusterCatalog (by image)
-                               ├─ back up Subscription spec (CE annotation)
+                               ├─ back up Subscription and OperatorGroup specs (CE annotations)
                                ├─ collect owned resources (5 sources, dedup)
                                ├─ create ClusterObjectSet (SecretPacker, IfNoController)
                                │     └─ wait for COS controller: Succeeded=True
@@ -111,5 +111,5 @@ minimized.
 | Doc | Contents |
 |---|---|
 | [REQUIREMENTS.md](REQUIREMENTS.md) | Functional/architectural requirements, eligibility rules, per-field handling for every Subscription, OperatorGroup, and CatalogSource field, and the ClusterExtension/ClusterCatalog target mappings |
-| [PLAN.md](PLAN.md) | The seven implementation phases |
+| [PLAN.md](PLAN.md) | The eight implementation phases |
 | [VALIDATION.md](VALIDATION.md) | Verifiable acceptance criteria and a requirement-traceability table |
