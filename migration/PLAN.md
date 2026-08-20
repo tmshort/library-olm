@@ -1,8 +1,9 @@
 # Implementation Plan — OLMv0 → OLMv1 Migration
 
-Seven phases, consolidated from an earlier 13-story breakdown. Each phase lists its goal,
-key files, dependencies, and a one-line exit criterion. Requirement references (`Rn`) point
-at [REQUIREMENTS.md](REQUIREMENTS.md); validation references at [VALIDATION.md](VALIDATION.md).
+Eight phases plus a cross-repo prerequisite. Each phase lists its goal, key files,
+dependencies, a one-line exit criterion, and the tracking Jira story. Requirement
+references (`Rn`) point at [REQUIREMENTS.md](REQUIREMENTS.md); validation references at
+[VALIDATION.md](VALIDATION.md).
 
 Base for the port: [perdasilva/operator-controller `migration`](https://github.com/perdasilva/operator-controller/tree/migration)
 (`internal/operator-controller/migration/` + `hack/tools/migrate/`).
@@ -30,7 +31,9 @@ migration/
 Downstream consumers (e.g., an `oc` plugin or the Console) will import `pkg/migration`
 directly and build their own CLI surface.
 
-## Prerequisite (cross-repo, runs in parallel)
+---
+
+## Prerequisite (cross-repo, runs in parallel) — [OPRUN-4716](https://redhat.atlassian.net/browse/OPRUN-4716)
 
 **Verify COS adoption end-to-end in `operator-controller`.** No controller changes are
 expected: the COS controller reconciles any COS regardless of origin, and the CE controller
@@ -38,12 +41,12 @@ discovers a pre-created COS via `olm.operatorframework.io/owner-name` and adopts
 patch) on first reconcile. Confirm a manually pre-created COS (owner labels, `revision: 1`,
 correct bundle annotations) reaches `Succeeded=True` and is adopted by a subsequently created
 CE **without** producing a duplicate COS. Track boxcutter phase 2 / `ClusterObjectDeployment`
-(R2.6). *Exit:* documented confirmation the flow works with no operator-controller changes.
-Verified during Phase 7 E2E.
+(R2.7). *Exit:* documented confirmation the flow works with no operator-controller changes.
+Verified during Phase 8 E2E.
 
 ---
 
-## Phase 1 — Repo bootstrap & prototype port
+## Phase 1 — Repo bootstrap & prototype port — [OPRUN-4717](https://redhat.atlassian.net/browse/OPRUN-4717)
 **Goal:** Stand up the `v0` module and port the prototype onto OLMv1's current APIs.
 - Module `github.com/operator-framework/library-olm` (`v0.x`); GitHub Actions (build, test,
   golangci-lint, go-apidiff); prow config (tide, lgtm/approve, hold) mirroring operator-controller.
@@ -56,7 +59,7 @@ Verified during Phase 7 E2E.
 **Depends on:** prerequisite (for the adoption contract). **Exit:** `go build ./...` and
 `go test ./...` pass; CI green on the skeleton.
 
-## Phase 2 — Scan & classification
+## Phase 2 — Scan & classification — [OPRUN-4718](https://redhat.atlassian.net/browse/OPRUN-4718)
 **Goal:** Four-state classification with catalog availability at scan time (R1.3, R4, C8).
 - `types.go`: `OperatorStatus` enum (`Eligible`/`Ineligible`/`AlreadyMigrated`/`Conflict`),
   replacing `OperatorScanResult.Eligible bool`.
@@ -69,29 +72,34 @@ Verified during Phase 7 E2E.
 
 **Depends on:** Phase 1. **Exit:** unit tests classify one fixture operator into each state.
 
-## Phase 3 — Compatibility checks & acknowledgment framework
+## Phase 3 — Compatibility checks & acknowledgment framework — [OPRUN-4719](https://redhat.atlassian.net/browse/OPRUN-4719)
 **Goal:** All eligibility rules (R3) and the override mechanism (R2.5).
-- `compatibility.go`: implement C1–C7 as overridable checks; add `checkNoOLMv0APIAccess`
-  (C5, **excluding** `operatorconditions`) and keep the OperatorCondition-**status** check (C4, R8).
-- `types.go`: `Options` gains one `bool` per flag — `AcknowledgeWatchScopeChange`,
+- `compatibility.go`: implement C1, C4, C5, C6, C9 as overridable (soft) checks; C2 and C3
+  as hard (non-overridable) blocks. Add `checkNoOLMv0APIAccess` (C5, inspecting all installed
+  RBAC, **excluding** `operatorconditions`, flagging only if OLMv0 API access exists without
+  OLMv1 RBAC). Keep the OperatorCondition-**status** check (C4, R8).
+- `types.go`: `Options` gains one `bool` per soft flag — `AcknowledgeWatchScopeChange`,
   `AcknowledgeOperatorCondition`, `AcknowledgeOLMv0APIAccess`, `AcknowledgeScopedServiceAccount`,
   `AcknowledgeNotSteadyState`, `AcknowledgeNamespaceDelete`, `AcknowledgeInstalled` — plus
-  `ContinueOnError`. (`AcknowledgeDependencies`, `AcknowledgeAPIServices`, and
-  `AcknowledgeSubscriptionConfig` removed: C2 and C3 are now hard blocks; C7 is removed.)
+  `ContinueOnError`.
 - On use, record `olm.operatorframework.io/acknowledged-<flag>: "true"` on the CE.
 - Collector places all objects (incl. CRDs) into the COS with `IfNoController`.
 
-**Depends on:** Phases 1, 2. **Exit:** each check flips Ineligible→Eligible when its flag is set;
-CE carries the matching annotation.
+**Note:** Once [OPRUN-4723](https://redhat.atlassian.net/browse/OPRUN-4723) (Phase 7) merges,
+update C3 from a hard block to a soft block (`--acknowledge-api-services`).
 
-## Phase 4 — Migration & recovery commands
+**Depends on:** Phases 1, 2. **Exit:** each soft check flips Ineligible→Eligible when its
+flag is set; CE carries the matching annotation.
+
+## Phase 4 — Migration & recovery commands — [OPRUN-4720](https://redhat.atlassian.net/browse/OPRUN-4720)
 **Goal:** The operator CLI surface (R1.1, R1.2, R1.4, R1.5, R1.8) — verb-plus-target
 (kubectl/`oc`-style); each verb takes an operator name or `--all`.
 - `check <op> | --all`: readiness + compatibility + four-state classification; `--all` scans the cluster (calls `Check`/`ScanAll`).
-- `convert <op> | --all`: profile → resolve catalog → back up Subscription spec to CE annotation
-  → collect (5-source, dedup) → create COS (wait `Succeeded=True`) → create CE → cleanup.
-  `--dry-run` previews via `Gather` (replaces the former `gather` subcommand). `--all` prints the
-  four-section summary, then converts each Eligible operator; `--continue-on-error` to keep going.
+- `convert <op> | --all`: profile → resolve catalog → back up Subscription and OperatorGroup
+  specs to CE annotations (R2.5) → optional `--backup <directory>` (R2.6) → collect
+  (5-source, dedup) → create COS (wait `Succeeded=True`) → create CE → cleanup.
+  `--dry-run` previews via `Gather`. `--all` prints the four-section summary, then converts
+  each Eligible operator; `--continue-on-error` to keep going.
 - `rollback <ce-name> | --all`: require `--acknowledge-installed` when CE is `Installed=True`; delete CE
   then COS with orphan cascade (fallback: new COS revision → `Succeeded=True` → orphan delete);
   restore Subscription from the backup annotation (`startingCSV` → `installedCSV`).
@@ -101,7 +109,7 @@ CE carries the matching annotation.
 **Depends on:** Phases 1–3. **Exit:** `check`, `convert` (single + `--all`), `rollback`, and
 `cleanup` each pass their VALIDATION per-command checks on kind.
 
-## Phase 5 — Catalog migration CLI *(parallelizable with 2–4)*
+## Phase 5 — Catalog migration CLI *(parallelizable with 2–4)* — [OPRUN-4722](https://redhat.atlassian.net/browse/OPRUN-4722)
 **Goal:** `migrate-catalogs-v0-to-v1` (R7).
 - `migration/pkg/catalogmigration/` + `migration/examples/cmd/migrate-catalogs-v0-to-v1/`.
 - List CatalogSources; skip already-migrated (matching image); create `ClusterCatalog` from
@@ -111,7 +119,7 @@ CE carries the matching annotation.
 **Depends on:** Phase 1. **Exit:** N CatalogSources → N serving ClusterCatalogs; operator scan
 then reports catalog-available.
 
-## Phase 6 — Install-namespace change ⚠️ blocked
+## Phase 6 — Install-namespace change ⚠️ blocked — [OPRUN-4721](https://redhat.atlassian.net/browse/OPRUN-4721)
 **Goal:** Support `--install-namespace` differing from the Subscription namespace (R5, R8).
 - **Blocked on** [OCPSTRAT-2690](https://redhat.atlassian.net/browse/OCPSTRAT-2690) /
   [OPRUN-4505](https://redhat.atlassian.net/browse/OPRUN-4505) /
@@ -124,7 +132,27 @@ then reports catalog-available.
 **Depends on:** Phases 1, 3 + PR #2825. **Exit:** resources land in the new namespace with PSA/SCC
 labels copied; old namespace deleted only when acknowledged.
 
-## Phase 7 — Testing
+## Phase 7 — OLMv1 APIService renderer support *(cross-repo, operator-controller)* — [OPRUN-4723](https://redhat.atlassian.net/browse/OPRUN-4723)
+**Goal:** Remove C3 (APIService definitions) as a permanent hard block by adding
+`apiregistration.k8s.io` support to the OLMv1 registry+v1 bundle renderer.
+
+The current `ResourceGenerators` list in `internal/operator-controller/rukpak/render/registryv1/registryv1.go`
+has **no** generator for `APIService` objects — it generates ServiceAccounts, RBAC, CRDs,
+Deployments, Webhooks, and CertProvider, but not `k8s.io/kube-aggregator` APIService
+registrations. Until this is fixed, operators that own APIService definitions cannot be
+migrated at all (C3 hard block).
+
+**Scope (in `operator-controller`):**
+- Add a `BundleCSVAPIServiceGenerator` to `ResourceGenerators` that reads
+  `csv.spec.apiservicedefinitions.owned` and emits the corresponding `APIService` objects.
+- Update the `BundleValidator` if APIService-specific validation rules are needed.
+- Once merged, update the migration tool's C3 check (Phase 3 / OPRUN-4719) from a **hard
+  block** to a **soft block** (overridable with `--acknowledge-api-services`).
+
+**Depends on:** nothing (can start immediately, runs in parallel). **Exit:** registry+v1
+renderer generates `APIService` objects; migration tool C3 updated to soft block.
+
+## Phase 8 — Testing — *(testing stories auto-created per epic)*
 **Goal:** Confidence across unit and E2E (R-wide).
 - Unit: ≥80% of `migration/pkg/...` with `controller-runtime/pkg/client/fake` — readiness,
   compatibility (each ack flag), scan (4 states), catalog parsing, collector (CRD/IfNoController,
@@ -140,9 +168,11 @@ E2E scenarios in VALIDATION pass in CI.
 ## Dependency summary
 
 ```
-prerequisite (operator-controller) ──┐  (parallel; needed before Phase 7)
-                                      ▼
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 7
-   │           └──────────────────► (Phase 3) ──► Phase 6 (blocked on PR #2825)
-   └──► Phase 5 (parallel) ─────────────────────► Phase 7
+Prerequisite (OPRUN-4716, operator-controller) ──┐  (parallel; needed before Phase 8)
+                                                  ▼
+Phase 1 (4717) ──► Phase 2 (4718) ──► Phase 3 (4719) ──► Phase 4 (4720) ──► Phase 8
+   │                  └─────────────────────────────────► Phase 6 (4721) BLOCKED
+   └──► Phase 5 (4722, parallel) ──────────────────────────────────────────► Phase 8
+
+Phase 7 (4723, operator-controller, parallel) ──► enables C3 soft-block in Phase 3
 ```
