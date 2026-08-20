@@ -34,7 +34,7 @@ flag flips it to `Eligible`:
 - **V2.8 (C8)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
 - **V2.9 (C9, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
 
-## V3. Field-mapping assertions (R4/R5/R6/R7)
+## V3. Field-mapping assertions (R4/R6/R7/R8)
 
 - **V3.1** Manual approval → `CE.spec.source.catalog.version` pinned to the installed version.
 - **V3.2** Automatic approval → CE version unset (channel-based upgrades allowed).
@@ -54,7 +54,7 @@ flag flips it to `Eligible`:
 - **V3.16** A pre-existing `ClusterCatalog` whose `spec.source.image.ref` matches the CatalogSource image is adopted (not duplicated); `migrate-catalogs-v0-to-v1` reports it as already covered and sets `olm.operatorframework.io/migrated-from-catalogsource: <namespace>/<name>` on the ClusterCatalog if the annotation is not already present. Running `migrate-catalogs-v0-to-v1` against the Red Hat default catalogs (which already exist as ClusterCatalogs) produces no new ClusterCatalogs and leaves the existing annotations unchanged.
 - **V3.17** Two CatalogSources from different namespaces both map to the same ClusterCatalog (same image) → the `migrated-from-catalogsource` annotation is set exactly once by whichever CatalogSource is processed first; subsequent processing of the other CatalogSource leaves the annotation unchanged.
 
-## V4. Edge-case tests (R8)
+## V4. Edge-case tests (R9)
 
 - **V4.1** Two operators in one namespace: migrating one leaves the OperatorGroup intact.
 - **V4.2** Two operators sharing a CRD: `IfNoController` lets the second adopt without a collision error.
@@ -82,13 +82,13 @@ flag flips it to `Eligible`:
 - **V6.2** No architecture-specific behavior (x86_64, aarch64, ppc64le, s390x).
 - **V6.3** Works connected and in restricted networks (catalog resolution by package name against pre-mirrored catalogs).
 - **V6.4** Only AllNamespaces install mode is produced (Own/Single converted with acknowledgment).
-- **V6.5** Self-managed, classic (standalone) clusters. HCP explicitly not covered (R9).
+- **V6.5** Self-managed, classic (standalone) clusters. HCP explicitly not covered (R10).
 
 ## V7. Deliverable checks
 
 - **V7.1** Repo at `/home/tshort/git/operator-framework/library-olm` with a pushed public personal remote; `migration/` holds README, REQUIREMENTS, PLAN, VALIDATION.
-- **V7.2** `REQUIREMENTS.md` covers every Subscription (R4), OperatorGroup (R5), and CatalogSource (R7) spec field, plus the full ClusterExtension target mapping (R6).
-- **V7.3** `PLAN.md` has 7 phases + the cross-repo prerequisite, each with an exit criterion.
+- **V7.2** `REQUIREMENTS.md` covers every Subscription (R4), OperatorGroup (R6), and CatalogSource (R8) spec field, plus the full ClusterExtension target mapping (R7).
+- **V7.3** `PLAN.md` has 8 phases + the cross-repo prerequisite, each with an exit criterion.
 - **V7.4** This traceability table has no requirement without at least one validation item.
 
 ---
@@ -98,8 +98,8 @@ flag flips it to `Eligible`:
 | Requirement | Validated by |
 |---|---|
 | R1.1 Library API | V1.1–V1.7 (via library calls), V3.*, V4.* |
-| R1.2 Two CLIs | V1.*, V3.8–V3.11, V5 |
-| R1.3 Four-state classification | V1.6, V2.*, V5.9 |
+| R1.2 Two CLIs | V1.*, V3.8–V3.11, V3.13–V3.17, V5 |
+| R1.3 Four-state classification | V1.6, V2.1–V2.9, V5 |
 | R1.4 `--all` ordering | V1.6 |
 | R1.5 Batch failure / `--continue-on-error` | V1.7 |
 | R1.6 Non-interactive | V1.8 |
@@ -110,7 +110,7 @@ flag flips it to `Eligible`:
 | R2.3 Wait for COS Succeeded; no status writes | V1.3 |
 | R2.4 SecretPacker + IfNoController | V1.2, V4.2, V4.6 |
 | R2.5 CE annotations | V3.6 |
-| R2.6 Boxcutter phase 2 | Prerequisite note (PLAN) |
+| R2.7 Boxcutter phase 2 | Prerequisite note (PLAN) |
 | R3 C1–C9 | V2.1–V2.9 |
 | R4 Subscription fields | V3.1–V3.3, V3.12, V4.4 |
 | R5 Resource collection strategy | V1.3, V4.2, V4.6 |

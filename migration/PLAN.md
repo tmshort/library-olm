@@ -77,7 +77,7 @@ Verified during Phase 8 E2E.
 - `compatibility.go`: implement C1, C4, C5, C6, C8 as overridable (soft) checks; C2 and C3
   as hard (non-overridable) blocks. Add `checkNoOLMv0APIAccess` (C5, inspecting all installed
   RBAC, **excluding** `operatorconditions`, flagging only if OLMv0 API access exists without
-  OLMv1 RBAC). Keep the OperatorCondition-**status** check (C4, R8).
+  OLMv1 RBAC). Keep the OperatorCondition-**status** check (C4, R9).
 - `types.go`: `Options` gains one `bool` per soft flag — `AcknowledgeWatchScopeChange`,
   `AcknowledgeOperatorCondition`, `AcknowledgeOLMv0APIAccess`, `AcknowledgeScopedServiceAccount`,
   `AcknowledgeNotSteadyState`, `AcknowledgeNamespaceDelete`, `AcknowledgeInstalled` — plus
@@ -99,7 +99,7 @@ flag is set; CE carries the matching annotation.
 - `convert <op> | --all`: profile → resolve catalog → back up Subscription and OperatorGroup
   specs to CE annotations (R2.5) → optional `--backup <directory>` (R2.6) → collect
   (primary: `Operator` CR `status.components.refs`; supplementary: `olm.owner` label query,
-  ownerRef query, InstallPlan steps; dedup by GVK+ns+name — see R4a) → create COS (wait
+  ownerRef query, InstallPlan steps; dedup by GVK+ns+name — see R5) → create COS (wait
   `Succeeded=True`) → create CE → cleanup.
   `--dry-run` previews via `Gather`. `--all` prints the four-section summary, then converts
   each Eligible operator; `--continue-on-error` to keep going.
@@ -123,7 +123,7 @@ flag is set; CE carries the matching annotation.
 then reports catalog-available.
 
 ## Phase 6 — Install-namespace change ⚠️ blocked — [OPRUN-4721](https://redhat.atlassian.net/browse/OPRUN-4721)
-**Goal:** Support `--install-namespace` differing from the Subscription namespace (R5, R8).
+**Goal:** Support `--install-namespace` differing from the Subscription namespace (R6, R9).
 - **Blocked on** [OCPSTRAT-2690](https://redhat.atlassian.net/browse/OCPSTRAT-2690) /
   [OPRUN-4505](https://redhat.atlassian.net/browse/OPRUN-4505) /
   [PR #2825](https://github.com/operator-framework/operator-controller/pull/2825) (making
@@ -179,5 +179,5 @@ Phase 1 (4717) ──► Phase 2 (4718) ──► Phase 3 (4719) ──► Phase
    │                  └─────────────────────────────────► Phase 6 (4721) BLOCKED
    └──► Phase 5 (4722, parallel) ──────────────────────────────────────────► Phase 8
 
-Phase 7 (4723, operator-controller, parallel) ──► enables C3 soft-block in Phase 3
+Phase 7 (4723, operator-controller, parallel) ──► removes C3 from Phase 3 (operators with APIService definitions become Eligible)
 ```
