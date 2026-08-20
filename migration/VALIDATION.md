@@ -30,10 +30,9 @@ flag flips it to `Eligible`:
 - **V2.4 (C4)** OperatorCondition with `status.conditions` entries → Ineligible "operator-condition"; `--acknowledge-operator-condition` → Eligible.
 - **V2.5 (C5)** CSV `.clusterPermissions` granting `operators.coreos.com/subscriptions` → Ineligible "olmv0-api-access"; `--acknowledge-olmv0-api-access` → Eligible.
 - **V2.6 (C6)** OperatorGroup with `serviceAccountName` → Ineligible "scoped serviceaccount"; `--acknowledge-scoped-serviceaccount` → Eligible.
-- **V2.7 (C7)** Subscription with non-empty `spec.config` on a cluster **with** `NewOLMConfigAPI` → Eligible, mapped to `deploymentConfig` (no flag needed). On a cluster **without** the feature → Ineligible "subscription-config"; `--acknowledge-subscription-config` → Eligible (migrates without the overrides).
-- **V2.8 (C8, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
-- **V2.9 (C9)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
-- **V2.10 (C10, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
+- **V2.7 (C7, hard)** Package absent from all ClusterCatalogs → Ineligible "package not found; run migrate-catalogs-v0-to-v1 first"; no override.
+- **V2.8 (C8)** CSV not `Succeeded` or Subscription not at `AtLatestKnown`/`UpgradePending` → Ineligible "not at steady state"; `--acknowledge-not-steady-state` → Eligible.
+- **V2.9 (C9, hard)** Subscription carries `olm.generated-by` → Ineligible "OLMv0-managed dependency"; no override.
 
 ## V3. Field-mapping assertions (R4/R5/R6/R7)
 
@@ -59,7 +58,7 @@ flag flips it to `Eligible`:
 
 - **V4.1** Two operators in one namespace: migrating one leaves the OperatorGroup intact.
 - **V4.2** Two operators sharing a CRD: `IfNoController` lets the second adopt without a collision error.
-- **V4.3** Operator not at steady state → Ineligible (C9) with a clear reason.
+- **V4.3** Operator not at steady state → Ineligible (C8) with a clear reason.
 - **V4.4** Dependency operator (`olm.generated-by` present / declares requirements) → flagged; an operator others depend on migrates but emits a dependents warning.
 - **V4.5** OperatorCondition disambiguation: an operator with OLMv0-stamped OperatorCondition RBAC but **empty** `status.conditions` is **Eligible** (RBAC is not treated as usage).
 - **V4.6** Large bundle exceeding inline size limits migrates successfully via SecretPacker.
@@ -112,8 +111,8 @@ flag flips it to `Eligible`:
 | R2.4 SecretPacker + IfNoController | V1.2, V4.2, V4.6 |
 | R2.5 CE annotations | V3.6 |
 | R2.6 Boxcutter phase 2 | Prerequisite note (PLAN) |
-| R3 C1–C10 | V2.1–V2.10 |
-| R4 Subscription fields | V3.1–V3.3, V3.12, V2.7, V4.4 |
+| R3 C1–C9 | V2.1–V2.9 |
+| R4 Subscription fields | V3.1–V3.3, V3.12, V4.4 |
 | R5 Resource collection strategy | V1.3, V4.2, V4.6 |
 | R6 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
 | R7 ClusterExtension mapping | V3.1–V3.6, V3.12 |
