@@ -88,8 +88,11 @@ not inline in the COS spec) to support large bundles, with
 CRDs — without conflict, while still refusing to stomp resources owned by another
 controller.
 
-**R2.5 — CE annotations.** The created `ClusterExtension` carries:
-- `olm.operatorframework.io/migrated-from-subscription: <ns>/<name>` — provenance and the key for `AlreadyMigrated`/`Conflict` detection.
+**R2.5 — Migration annotations.** The `migrated-from-subscription` annotation is set on **both** the `ClusterObjectSet` and the `ClusterExtension`:
+- On the **COS**: `olm.operatorframework.io/migrated-from-subscription: <ns>/<name>` — ties the revision to its OLMv0 origin; makes migrated COSes discoverable independently of the CE and provides provenance even if the CE annotation is lost.
+- On the **CE**: `olm.operatorframework.io/migrated-from-subscription: <ns>/<name>` — the key for `AlreadyMigrated`/`Conflict` detection during scan.
+
+The CE also carries:
 - `olm.operatorframework.io/migration-subscription-backup: <json>` — the original `Subscription` spec (package, channel, source, sourceNamespace, installPlanApproval, startingCSV), so `rollback` is self-contained and machine-independent. The `Subscription` is deleted during migration, so it cannot be used as the backup.
 - `olm.operatorframework.io/migration-operatorgroup-backup: <json>` — the original `OperatorGroup` spec (selector, targetNamespaces, serviceAccountName, upgradeStrategy) from the Subscription's namespace, so `rollback` can also restore the OperatorGroup if needed.
 - `olm.operatorframework.io/acknowledged-<flag>: "true"` — one per acknowledgment flag used at migration time, for audit.
