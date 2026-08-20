@@ -52,6 +52,8 @@ flag flips it to `Eligible`:
 - **V3.13** Two CatalogSources in different namespaces share a name **and** the same image → `migrate-catalogs-v0-to-v1` creates a single `ClusterCatalog` using that name; both Subscriptions' CE selectors resolve to the same ClusterCatalog.
 - **V3.14** Two CatalogSources in different namespaces share a name **but** have different images → `migrate-catalogs-v0-to-v1` creates two ClusterCatalogs named `<name>-<namespace-A>` and `<name>-<namespace-B>`; each Subscription's CE selector resolves to the correct ClusterCatalog by image match.
 - **V3.15** CatalogSource `spec.priority` value outside `int32` range (> 2,147,483,647 or < −2,147,483,648) → reported as not migratable; migration skipped for that CatalogSource.
+- **V3.16** A pre-existing `ClusterCatalog` whose `spec.source.image.ref` matches the CatalogSource image is adopted (not duplicated); `migrate-catalogs-v0-to-v1` reports it as already covered and sets `olm.operatorframework.io/migrated-from-catalogsource: <namespace>/<name>` on the ClusterCatalog if the annotation is not already present. Running `migrate-catalogs-v0-to-v1` against the Red Hat default catalogs (which already exist as ClusterCatalogs) produces no new ClusterCatalogs and leaves the existing annotations unchanged.
+- **V3.17** Two CatalogSources from different namespaces both map to the same ClusterCatalog (same image) → the `migrated-from-catalogsource` annotation is set exactly once by whichever CatalogSource is processed first; subsequent processing of the other CatalogSource leaves the annotation unchanged.
 
 ## V4. Edge-case tests (R8)
 
@@ -115,6 +117,6 @@ flag flips it to `Eligible`:
 | R5 Resource collection strategy | V1.3, V4.2, V4.6 |
 | R6 OperatorGroup fields | V2.1, V2.6, V3.5, V3.7 |
 | R7 ClusterExtension mapping | V3.1–V3.6, V3.12 |
-| R8 CatalogSource→ClusterCatalog | V3.8–V3.11, V3.13, V3.14, V3.15 |
+| R8 CatalogSource→ClusterCatalog | V3.8–V3.11, V3.13–V3.17 |
 | R9 Edge cases | V4.1–V4.7 |
 | R10 Non-goals | V6.4, V6.5 |
